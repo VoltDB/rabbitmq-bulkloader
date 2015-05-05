@@ -1,2 +1,3 @@
-# rabbitmq-bulkloader
-RabbitMQ Bulk Loader
+# RabbitMQ Bulk Loader
+
+More information to come...
