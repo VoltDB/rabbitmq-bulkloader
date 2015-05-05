@@ -1,3 +1,5 @@
 # RabbitMQ Bulk Loader
 
-More information to come...
+## TO-DO
+
+- Upload to Maven repository
