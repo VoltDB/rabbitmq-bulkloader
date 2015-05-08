@@ -22,11 +22,18 @@
  * THE SOFTWARE.
  */
 
-allprojects {
-    version='1.0-SNAPSHOT'
+apply plugin: 'java'
+apply plugin: 'eclipse'
 
-    repositories {
-        mavenCentral()
-        jcenter()
-    }
+project.description = 'VoltDB RabbitMQ Utility'
+archivesBaseName = 'voltdb-rabbitmq-utility'
+
+repositories {
+    mavenCentral()
+    jcenter()
+}
+
+dependencies {
+    compile 'org.voltdb:voltdbclient:latest.release'
+    compile 'commons-cli:commons-cli:1.2'
 }
