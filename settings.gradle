@@ -1,0 +1,4 @@
+include 'rabbitmq-utility'
+include 'rabbitmq-bulk-loader'
+include 'test-rabbitmq-csv-receive'
+include 'test-rabbitmq-csv-send'

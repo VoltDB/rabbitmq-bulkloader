@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+gradle --daemon -q test-rabbitmq-csv-send:run -Drun.args="$*"
