@@ -47,9 +47,22 @@ import org.voltdb.utils.CSVDataLoader;
 import org.voltdb.utils.CSVTupleDataLoader;
 import org.voltdb.utils.RowWithMetaData;
 
+import com.google_voltpatches.common.net.HostAndPort;
+
 public class RMQBulkLoader
 {
-    private static final String SYNTAX = "rabbitmq-bulkloader [options ...] [table]";
+    private static final String HELP_SYNTAX = "(below)";
+    private static final String HELP_HEADER = ".\n"
+          + "rabbitmqloader [options] --mqhost server[:port] table-name\n"
+          + "rabbitmqloader [options] --amqp {uri} table-name\n"
+          + "rabbitmqloader [options] --mqhost server[:port] -p proc-name\n"
+          + "rabbitmqloader [options] --amqp {uri} -p proc-name\n"
+          + ".";
+    private static final int HELP_WIDTH = 100;
+
+    private static int DEFAULT_MAX_ERRORS = 100;
+    private static int DEFAULT_FLUSH_INTERVAL = 10;
+    private static int DEFAULT_BATCH_SIZE = 200;
 
     private static final VoltLogger LOG = new VoltLogger("RABBITMQLOADER");
 
@@ -118,7 +131,7 @@ public class RMQBulkLoader
         final ClientConfig c_config = new ClientConfig(m_voltOpts.user, m_voltOpts.password);
         c_config.setProcedureCallTimeout(0); // Set procedure all to infinite
 
-        m_client = getClient(c_config, m_voltOpts.servers, m_voltOpts.port.intValue());
+        m_client = getClient(c_config, m_voltOpts.servers);
 
         ClientImpl clientImpl = (ClientImpl) m_client;
         BulkLoaderErrorHandler errorHandler = new ErrorHandler();
@@ -179,12 +192,12 @@ public class RMQBulkLoader
      * @throws IOException
      * @throws UnknownHostException
      */
-    public static Client getClient(ClientConfig config, String[] servers, int port)
+    public static Client getClient(ClientConfig config, HostAndPort[] servers)
             throws UnknownHostException, IOException
     {
         final Client client = ClientFactory.createClient(config);
-        for (String server : servers) {
-            client.createConnection(server.trim(), port);
+        for (HostAndPort server : servers) {
+            client.createConnection(server.getHostText(), server.getPort());
         }
         return client;
     }
@@ -226,14 +239,14 @@ public class RMQBulkLoader
     /**
      * Main configuration options.
      */
-    public static class MainOptions implements CLIDriver.ParsedOptions
+    public static class MainOptions implements CLIDriver.ParsedOptionSet
     {
         // Either table or procedure will be non-null, but not both.
         String procedure = null;
         String table = null;
-        Long maxerrors = (long) 100;
-        Long flush = (long) 10;
-        Long batch = (long) 200;
+        Long maxerrors = (long) DEFAULT_MAX_ERRORS;
+        Long flush = (long) DEFAULT_FLUSH_INTERVAL;
+        Long batch = (long) DEFAULT_BATCH_SIZE;
 
         @Override
         @SuppressWarnings("static-access")
@@ -251,21 +264,27 @@ public class RMQBulkLoader
                     .withArgName("maxerrors")
                     .withType(Number.class)
                     .hasArg()
-                    .withDescription(String.format("maximum number of errors before giving up (default: %d)", this.maxerrors))
+                    .withDescription(String.format(
+                            "maximum number of errors before giving up (default: %d)",
+                            this.maxerrors))
                     .create('m'));
             options.addOption(OptionBuilder
                     .withLongOpt("flush")
                     .withArgName("flush")
                     .withType(Number.class)
                     .hasArg()
-                    .withDescription(String.format("periodic flush interval in seconds. (default: %d)", this.flush))
+                    .withDescription(String.format(
+                            "periodic flush interval in seconds. (default: %d)",
+                            this.flush))
                     .create('f'));
             options.addOption(OptionBuilder
                     .withLongOpt("batch")
                     .withArgName("batch")
                     .withType(Number.class)
                     .hasArg()
-                    .withDescription(String.format("batch size for processing. (default: %d)", this.batch))
+                    .withDescription(String.format(
+                            "batch size for processing. (default: %d)",
+                            this.batch))
                     .create('b'));
         }
 
@@ -311,9 +330,13 @@ public class RMQBulkLoader
     public static void main(String[] args)
     {
         MainOptions mainOpts = new MainOptions();
-        RMQCLIOptions rmqOpts = new RMQCLIOptions();
+        RMQCLIOptions rmqOpts = RMQCLIOptions.createForConsumer();
         VoltDBCLIOptions voltOpts = new VoltDBCLIOptions();
-        CLIDriver.parse(SYNTAX, args, mainOpts, rmqOpts, voltOpts);
+        CLIDriver.HelpData helpData = new CLIDriver.HelpData();
+        helpData.syntax = HELP_SYNTAX;
+        helpData.header = HELP_HEADER;
+        helpData.width = HELP_WIDTH;
+        CLIDriver.parse(helpData, args, mainOpts, rmqOpts, voltOpts);
         try {
             final RMQBulkLoader loader = new RMQBulkLoader(mainOpts, rmqOpts, voltOpts);
             loader.bulkLoad();

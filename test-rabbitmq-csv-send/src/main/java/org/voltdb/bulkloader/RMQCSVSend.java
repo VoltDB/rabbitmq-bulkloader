@@ -24,21 +24,185 @@
 
 package org.voltdb.bulkloader;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
+import java.util.Iterator;
 
 import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
-import org.voltdb.bulkloader.CLIDriver.ParsedOptions;
+import org.voltdb.bulkloader.CLIDriver.ParsedOptionSet;
 
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
+import com.rabbitmq.client.MessageProperties;
 
 public class RMQCSVSend
 {
-    private static final String SYNTAX = "test-rabbitmq-csv-send [options ...] messages ...";
+    private static final String HELP_SYNTAX = "(below)";
+    private static final String HELP_HEADER = ".\n"
+          + "test-rabbitmq-csv-send [options] -f csvfile\n"
+          + "test-rabbitmq-csv-send [options] -g genspec\n"
+          + ".";
+    private static final String HELP_FOOTER = ".\n"
+          + "The genspec parameter is a string with one character per "
+          + "generated column. 's' is a string column and 'i' is an integer.";
+    private static final int HELP_WIDTH = 80;
+    private static final String DEFAULT_EXCHANGE_TYPE = "direct";
 
-    private static void sendMessages(RMQCLIOptions rmqOpts, TestOptions testOpts, String[] messages)
+    private interface LineIterator extends Iterator<String>
+    {
+        void open() throws IOException;
+        void close();
+    }
+
+    /**
+     * Iterator for CSV file rows.
+     * Assumes the File object was pre-validated, e.g. for existance.
+     */
+    private static class FileIterator implements LineIterator
+    {
+        private final File file;
+        private FileReader fileReader = null;
+        private BufferedReader bufferedReader = null;
+        private String nextLine = null;
+
+        public FileIterator(File file)
+        {
+            this.file = file;
+        }
+
+        @Override
+        public void open() throws IOException
+        {
+            this.fileReader = new FileReader(this.file);
+            try {
+                this.bufferedReader = new BufferedReader(this.fileReader);
+            }
+            catch(Throwable t) {
+                this.close();
+                throw new IOException("Failed to open CSV reader", t);
+            }
+        }
+
+        @Override
+        public void close()
+        {
+            try {
+                if (this.bufferedReader != null) {
+                    this.bufferedReader.close();
+                }
+                else if (this.fileReader != null) {
+                    this.fileReader.close();
+                }
+            }
+            catch(IOException e) {
+                // Ignore
+            }
+            this.bufferedReader = null;
+            this.fileReader = null;
+            this.nextLine = null;
+        }
+
+        private String getNextLine()
+        {
+            if (this.nextLine == null) {
+                if (this.bufferedReader != null) {
+                    try {
+                        this.nextLine = this.bufferedReader.readLine();
+                    }
+                    catch (IOException e) {
+                        e.printStackTrace();
+                        this.close();
+                    }
+                }
+            }
+            return this.nextLine;
+        }
+
+        @Override
+        public boolean hasNext()
+        {
+            return this.getNextLine() != null;
+        }
+
+        @Override
+        public String next()
+        {
+            return this.getNextLine();
+        }
+
+        @Override
+        public void remove()
+        {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+    /**
+     * Iterator for CSV rows generated based on a counter.
+     * Assumes the spec string was pre-validated.
+     */
+    private static class SequentialCSVGenerator implements LineIterator
+    {
+        private String genspec;
+        private Integer counter = 0;
+
+        public SequentialCSVGenerator(String genspec)
+        {
+            this.genspec = genspec;
+        }
+
+        @Override
+        public boolean hasNext()
+        {
+            return true;
+        }
+
+        @Override
+        public String next()
+        {
+            counter++;
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < this.genspec.length(); ++i) {
+                if (i > 0) {
+                    sb.append(",");
+                }
+                switch(this.genspec.charAt(i)) {
+                case 'i':
+                    sb.append(this.counter.toString());
+                    break;
+                case 's':
+                    sb.append(String.format("\"S%d\"", this.counter));
+                    break;
+                default:
+                    assert false;
+                }
+            }
+            return sb.toString();
+        }
+
+        @Override
+        public void remove()
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void open() throws IOException
+        {
+        }
+
+        @Override
+        public void close()
+        {
+        }
+
+    }
+
+    private static void sendMessages(RMQCLIOptions rmqOpts, LineIterator lineIter, RandomSleeper sleeper)
             throws InterruptedException
     {
         ConnectionFactory factory = new ConnectionFactory();
@@ -46,9 +210,14 @@ public class RMQCSVSend
 
         Connection connection = null;
         Channel channel = null;
+        String exchangeName = "";
         try {
             connection = factory.newConnection();
             channel = connection.createChannel();
+            if (rmqOpts.mqexchange != null) {
+                exchangeName = rmqOpts.mqexchange;
+                channel.exchangeDeclare(exchangeName, rmqOpts.mqextype);
+            }
         }
         catch (IOException e1) {
             e1.printStackTrace();
@@ -56,14 +225,21 @@ public class RMQCSVSend
         }
 
         try {
-            channel.queueDeclare(rmqOpts.mqqueue, false, false, false, null);
-            int sent = 0;
-            for (String message : messages) {
-                if (sent++ > 0 && testOpts.interval != null && testOpts.interval > 0) {
-                    Thread.sleep(testOpts.interval * 1000);
+            channel.queueDeclare(rmqOpts.mqqueue, true, false, false, null);
+            try {
+                while (lineIter.hasNext()) {
+                    String message = lineIter.next();
+                    channel.basicPublish(
+                            exchangeName,
+                            rmqOpts.mqrouting,
+                            MessageProperties.TEXT_PLAIN,
+                            message.getBytes());
+                    System.out.printf(" [x] Sent '%s'\n", message);
+                    sleeper.sleep();
                 }
-                channel.basicPublish("", rmqOpts.mqqueue, null, message.getBytes());
-                System.out.printf(" [x] Sent '%s'\n", message);
+            }
+            finally {
+                lineIter.close();
             }
         }
         catch (IOException e) {
@@ -80,38 +256,91 @@ public class RMQCSVSend
         }
     }
 
-    private static class TestOptions implements ParsedOptions
+    private static class TestOptionSet implements ParsedOptionSet
     {
-        Long interval = null;
+        public LineIterator lineIter = null;
 
         @Override
         @SuppressWarnings("static-access")
         public void preParse(Options options)
         {
-            options.addOption(
-                OptionBuilder
-                    .withLongOpt("interval")
-                    .withArgName("interval")
-                    .withType(Number.class)
-                    .hasArg()
-                    .withDescription("# of seconds between sending messages (default: 0)")
-                    .create());
+            options.addOption(OptionBuilder
+                                .withLongOpt("csvfile")
+                                .withArgName("csvfile")
+                                .withType(String.class)
+                                .hasArg()
+                                .withDescription("input CSV file")
+                                .create('f'));
+            options.addOption(OptionBuilder
+                                .withLongOpt("genspec")
+                                .withArgName("genspec")
+                                .withType(String.class)
+                                .hasArg()
+                                .withDescription("CSV generation specification (see below)")
+                                .create('g'));
         }
 
         @Override
         public void postParse(CLIDriver driver)
         {
-            this.interval = driver.getNumber("interval", (long) 0);
+            String csvfilePath = driver.getString("csvfile");
+            String genspec = driver.getString("genspec");
+            if (csvfilePath == null && genspec == null) {
+                driver.addError("Use --csvfile or --genspec to specify a data source.");
+            }
+            if (csvfilePath != null && genspec != null) {
+                driver.addError("Combining a CSV file with a random generator is not allowed.");
+            }
+            if (csvfilePath != null) {
+                File csvfile = new File(csvfilePath);
+                if (csvfile.exists()) {
+                    this.lineIter = new FileIterator(csvfile);
+                }
+                else {
+                    driver.addError("File does not exist: %s", csvfilePath);
+                }
+            }
+            else if (genspec != null) {
+                if (checkGenSpec(genspec)) {
+                    this.lineIter = new SequentialCSVGenerator(genspec);
+                }
+                else {
+                    driver.addError("Bad generator specification: %s", genspec);
+                }
+            }
+        }
+
+        private static boolean checkGenSpec(String genspec)
+        {
+            for (int i = 0; i < genspec.length(); ++i) {
+                switch(genspec.charAt(i)) {
+                case 'i':
+                case 's':
+                    break;
+                default:
+                    return false;
+                }
+            }
+            return true;
         }
     }
 
     public static void main(String[] args) throws IOException
     {
-        RMQCLIOptions rmqOpts = new RMQCLIOptions();
-        TestOptions testOpts = new TestOptions();
-        CLIDriver options = CLIDriver.parse(SYNTAX, args, rmqOpts, testOpts);
+        RMQCLIOptions rmqOpts = RMQCLIOptions.createForProducer(DEFAULT_EXCHANGE_TYPE);
+        TestOptionSet testOpts = new TestOptionSet();
+        RandomSleeper sleeper = new RandomSleeper(null);
+        // By default sleep 1 second between messages.
+        sleeper.setDefaultRange(1000L, 1000L);
+        sleeper.setVerbose(true);
+        CLIDriver.HelpData helpData = new CLIDriver.HelpData();
+        helpData.syntax = HELP_SYNTAX;
+        helpData.header = HELP_HEADER;
+        helpData.width = HELP_WIDTH;
+        helpData.footer = HELP_FOOTER;
+        CLIDriver.parse(helpData, args, rmqOpts, sleeper.getOptionSet(), testOpts);
         try {
-            sendMessages(rmqOpts, testOpts, options.args);
+            sendMessages(rmqOpts, testOpts.lineIter, sleeper);
         }
         catch (InterruptedException e) {
             System.exit(255);

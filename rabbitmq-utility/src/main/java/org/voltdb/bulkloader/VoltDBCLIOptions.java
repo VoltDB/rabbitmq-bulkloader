@@ -28,10 +28,11 @@ import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
 import org.voltdb.client.Client;
 
-public class VoltDBCLIOptions implements CLIDriver.ParsedOptions
+import com.google_voltpatches.common.net.HostAndPort;
+
+public class VoltDBCLIOptions implements CLIDriver.ParsedOptionSet
 {
-    public String[] servers = null;
-    public Long port = null;
+    public HostAndPort[] servers = null;
     public String user = null;
     public String password = null;
 
@@ -44,15 +45,20 @@ public class VoltDBCLIOptions implements CLIDriver.ParsedOptions
             .withArgName("servers")
             .withType(String.class)
             .hasArg()
-            .withDescription("comma-separated VoltDB server(s) (default: localhost)")
+            .withDescription(String.format(
+                    "VoltDB servers (host1[:port1][,host2[:port2],...]) (default: localhost:%d)",
+                    Client.VOLTDB_SERVER_PORT))
             .create('s'));
+        // Deprecated in favor up using host:port.
         options.addOption(OptionBuilder
             .withLongOpt("port")
             .withArgName("port")
             .withType(Long.class)
             .hasArg()
-            .withDescription(String.format("VoltDB server connection port (default: %d)", Client.VOLTDB_SERVER_PORT))
-            .create('p'));
+            .withDescription(String.format(
+                    "VoltDB server connection port (default: %d)",
+                    Client.VOLTDB_SERVER_PORT))
+            .create());
         options.addOption(OptionBuilder
             .withLongOpt("user")
             .withArgName("user")
@@ -72,13 +78,21 @@ public class VoltDBCLIOptions implements CLIDriver.ParsedOptions
     @Override
     public void postParse(CLIDriver driver)
     {
-        this.servers = driver.getCommaSeparatedStrings("servers", "localhost");
-        this.port = driver.getNumber("port", (long) Client.VOLTDB_SERVER_PORT);
+        String[] hostSpecs = driver.getCommaSeparatedStrings("servers", "localhost");
+        Long defaultPort = driver.getNumber("port", (long) Client.VOLTDB_SERVER_PORT);
+        this.servers = new HostAndPort[hostSpecs.length];
+        for (int i = 0; i < hostSpecs.length; ++i) {
+            try {
+                this.servers[i] = HostAndPort.fromString(hostSpecs[i]);
+                if (!this.servers[i].hasPort()) {
+                    this.servers[i] = HostAndPort.fromParts(this.servers[i].getHostText(), defaultPort.intValue());
+                }
+            }
+            catch(IllegalArgumentException e) {
+                driver.addError("Bad host[:port]: %s: %s", hostSpecs[i], e.getLocalizedMessage());
+            }
+        }
         this.user = driver.getString("user");
         this.password = driver.getString("password");
-
-        if (this.port < 0) {
-            driver.abort(true, "VoltDB port must be >= 0");
-        }
     }
 }

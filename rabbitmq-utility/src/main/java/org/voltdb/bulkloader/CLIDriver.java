@@ -24,29 +24,41 @@
 
 package org.voltdb.bulkloader;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.cli.PosixParser;
 
 public class CLIDriver
 {
-    protected final String appName;
+    public static class HelpData
+    {
+        String syntax = null;
+        String header = null;
+        String footer = null;
+        Integer width = null;
+    }
+    protected final HelpData helpData;
     protected PosixParser parser = null;
     protected CommandLine cmd = null;
     protected Options options = null;
     public String[] args = {};
+    protected List<String> errors = new ArrayList<String>();
 
-    protected CLIDriver(String appName)
+    protected CLIDriver(HelpData helpData)
     {
-        this.appName = appName;
+        this.helpData = helpData;
     }
 
     public String getString(String name)
     {
         try {
-            return (String) cmd.getParsedOptionValue(name);
+            return (String) this.cmd.getParsedOptionValue(name);
         }
         catch (ParseException e) {
             this.abort(true, e.getLocalizedMessage());
@@ -84,10 +96,10 @@ public class CLIDriver
     public String[] getCommaSeparatedStrings(String name, String... defaultValues)
     {
         try {
-            if (!cmd.hasOption(name)) {
+            if (!this.cmd.hasOption(name)) {
                 return defaultValues;
             }
-            return ((String) cmd.getParsedOptionValue(name)).split(",");
+            return ((String) this.cmd.getParsedOptionValue(name)).split(",");
         }
         catch (ParseException e) {
             this.abort(true, e.getLocalizedMessage());
@@ -98,7 +110,7 @@ public class CLIDriver
     public Long getNumber(String name)
     {
         try {
-            return (Long) cmd.getParsedOptionValue(name);
+            return (Long) this.cmd.getParsedOptionValue(name);
         }
         catch (ParseException e) {
             this.abort(true, e.getLocalizedMessage());
@@ -114,16 +126,39 @@ public class CLIDriver
         return getNumber(name);
     }
 
+    public boolean getBoolean(String name)
+    {
+        return this.cmd.hasOption(name);
+    }
+
+    /**
+     * CLIDriver factory that parses command line arguments and allows
+     * additional options to be included. See documentation for parse().
+     *
+     * @param syntax  syntax text
+     * @param args  command line arguments (and options)
+     * @param addOpts  additional ParsedOptionSet objects
+     */
+    public static CLIDriver parse(
+            String syntax,
+            String[] args,
+            ParsedOptionSet... addOpts)
+    {
+        HelpData helpOptions = new HelpData();
+        helpOptions.syntax = syntax;
+        return parse(helpOptions, args, addOpts);
+    }
+
     /**
      * CLIDriver factory that parses command line arguments and allows
      * additional options to be included. See documentation for parse().
      *
      * @param args  command line arguments (and options)
-     * @param addOpts  additional ParsedOptions objects
+     * @param addOpts  additional ParsedOptionSet objects
      */
-    public static CLIDriver parse(String syntax, String[] args, ParsedOptions... addOpts)
+    public static CLIDriver parse(HelpData helpOptions, String[] args, ParsedOptionSet... addOpts)
     {
-        CLIDriver config = new CLIDriver(syntax);
+        CLIDriver config = new CLIDriver(helpOptions);
         try {
             config.parseArgs(args, addOpts);
         }
@@ -134,10 +169,32 @@ public class CLIDriver
         return config;
     }
 
-    public interface ParsedOptions
+    public interface ParsedOptionSet
     {
         void preParse(Options options);
         void postParse(CLIDriver driver);
+    }
+
+    private class HelpOptionSet implements ParsedOptionSet
+    {
+        @Override
+        @SuppressWarnings("static-access")
+        public void preParse(Options options)
+        {
+            options.addOption(OptionBuilder
+                                .withLongOpt("help")
+                                .withDescription("display help")
+                                .create('h'));
+        }
+
+        @Override
+        public void postParse(CLIDriver driver)
+        {
+            if (driver.getBoolean("help")) {
+                driver.usage();
+                System.exit(0);
+            }
+        }
     }
 
     /**
@@ -147,36 +204,71 @@ public class CLIDriver
      * customize the directly accessible data members create a subclass.
      *
      * @param args  command line arguments (and options)
-     * @param addOpts  additional ParsedOptions objects
+     * @param userOptionSets  user parsed option sets
      * @throws ParseException  when command line input fails validation
      */
-    protected void parseArgs(String[] args, ParsedOptions... addOpts)
+    protected void parseArgs(String[] args, ParsedOptionSet... userOptionSets)
             throws ParseException
     {
         this.options = new Options();
-        for (ParsedOptions addOpt : addOpts) {
-            addOpt.preParse(this.options);
+
+        // Add help options to provided option sets.
+        List<ParsedOptionSet> optionSets = new ArrayList<ParsedOptionSet>(userOptionSets.length + 1);
+        for (ParsedOptionSet addOpt : userOptionSets) {
+            optionSets.add(addOpt);
+        }
+        optionSets.add(new HelpOptionSet());
+
+        for (ParsedOptionSet parsedOptionSet : optionSets) {
+            parsedOptionSet.preParse(this.options);
         }
 
         this.parser = new PosixParser();
         this.cmd = this.parser.parse(this.options, args);
         this.args = this.cmd.getArgs();
 
-        for (ParsedOptions addOpt : addOpts) {
-            addOpt.postParse(this);
+        for (ParsedOptionSet parsedOptionSet : optionSets) {
+            parsedOptionSet.postParse(this);
         }
+
+        if (!this.errors.isEmpty()) {
+            StringBuilder sb = new StringBuilder(String.format(
+                    "Error%s", this.errors.size() > 1 ? "s:\n" : ": "));
+            for (int ierror = 0; ierror < this.errors.size(); ++ierror) {
+                sb.append(this.errors.get(ierror));
+                if (ierror < this.errors.size() - 1) {
+                    sb.append('\n');
+                }
+            }
+            this.abort(true, sb.toString());
+        }
+    }
+
+    public void addError(String format, Object... args)
+    {
+        this.errors.add(String.format(format, args));
     }
 
     public void usage()
     {
         HelpFormatter formatter = new HelpFormatter();
-        formatter.printHelp(this.appName, this.options, false);
+        if (this.helpData.width != null) {
+            formatter.setWidth(this.helpData.width);
+        }
+        formatter.printHelp(
+                this.helpData.syntax,
+                this.helpData.header,
+                this.options,
+                this.helpData.footer,
+                false);
     }
 
     public void abort(boolean showUsage, String fmt, Object... args)
     {
-        System.err.printf(fmt, args);
-        System.err.println("");
+        if (fmt != null) {
+            System.out.printf(fmt, args);
+            System.out.println("");
+        }
         if (showUsage) {
             this.usage();
         }
