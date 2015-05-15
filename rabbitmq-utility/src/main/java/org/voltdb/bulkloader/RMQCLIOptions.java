@@ -235,12 +235,6 @@ public class RMQCLIOptions implements CLIDriver.ParsedOptionSet
                 driver.addError("AMQP URI is empty.");
                 //TODO: More validation
             }
-            if (this.mqexchange != null) {
-                driver.addError("An exchange is not needed when an AMQP URI is specified.");
-            }
-            if (this.mqqueue != null) {
-                driver.addError("A queue name is not needed when an AMQP URI is specified.");
-            }
         }
 
         if (this.mqexchange == null && this.mqqueue == null && this.amqp == null) {

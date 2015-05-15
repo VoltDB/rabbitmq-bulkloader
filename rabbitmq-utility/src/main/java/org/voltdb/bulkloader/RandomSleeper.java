@@ -113,7 +113,7 @@ public class RandomSleeper
             long offset = delta == 0 ? 0 : this.random.nextInt(delta);
             long sleepMillis = this.opts.sleepmin + offset;
             if (this.verbose) {
-                System.out.printf("Sleeping %d milliseconds...\n", sleepMillis);
+                System.out.printf("  (sleep %d)\n", sleepMillis);
             }
             Thread.sleep(sleepMillis);
         }
