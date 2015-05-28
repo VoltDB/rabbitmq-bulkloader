@@ -22,19 +22,14 @@
  * THE SOFTWARE.
  */
 
-apply plugin: 'java'
-apply plugin: 'eclipse'
+package org.voltdb.bulkloader;
 
-project.description = 'VoltDB RabbitMQ Utility'
-archivesBaseName = 'voltdb-rabbitmq-utility'
+import com.google_voltpatches.common.net.HostAndPort;
 
-repositories {
-    mavenCentral()
-    jcenter()
-}
-
-dependencies {
-    compile 'org.voltdb:voltdbclient:latest.release'
-    compile 'com.rabbitmq:amqp-client:3.5.1'
-    compile 'commons-cli:commons-cli:1.2'
+public class VoltDBOptions
+{
+    // Public option opts
+    public HostAndPort[] servers = null;
+    public String user = null;
+    public String password = null;
 }
