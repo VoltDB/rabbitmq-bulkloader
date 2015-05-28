@@ -27,7 +27,7 @@ package org.voltdb.bulkloader;
 import java.io.IOException;
 
 import org.apache.commons.cli.Options;
-import org.voltdb.bulkloader.CLIDriver.ParsedOptions;
+import org.voltdb.bulkloader.CLIDriver.ParsedOptionSet;
 
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
@@ -40,8 +40,60 @@ public class RMQCSVReceive
 {
     private static final String SYNTAX = "test-rabbitmq-csv-receive [options ...]";
 
-    // For additional test-specific option and argument handling.
-    private static class TestOptions implements ParsedOptions
+    public static void receiveMessages(RMQCLIOptions rmqOpts, TestOptions testOpts, String[] args)
+            throws IOException
+    {
+        ConnectionFactory factory = new ConnectionFactory();
+        factory.setHost(rmqOpts.mqhost);
+        Connection connection = factory.newConnection();
+        Channel channel = connection.createChannel();
+        if (rmqOpts.mqexchange != null) {
+            if (rmqOpts.mqextype != null) {
+                channel.exchangeDeclare(rmqOpts.mqexchange, rmqOpts.mqextype);
+            }
+            for (String bindingKey : rmqOpts.mqbindings) {
+                channel.queueBind(rmqOpts.mqqueue, rmqOpts.mqexchange, bindingKey);
+            }
+        }
+
+        try {
+            channel.queueDeclare(rmqOpts.mqqueue, true, false, false, null);
+            System.out.println(" [*] Waiting for messages. To exit press CTRL+C");
+            channel.basicQos(1);
+            QueueingConsumer consumer = new QueueingConsumer(channel);
+            channel.basicConsume(rmqOpts.mqqueue, false, consumer);
+            while (true) {
+                QueueingConsumer.Delivery delivery = consumer.nextDelivery();
+                String message = new String(delivery.getBody());
+                channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+                // Sleep 1 second for every trailing '.'.
+                int dotCount = 0;
+                for (int i = message.length() - 1; i >= 0; --i) {
+                    if (message.charAt(i) == '.') {
+                        dotCount++;
+                    }
+                    else {
+                        break;
+                    }
+                }
+                if (dotCount > 0) {
+                    message = message.substring(0, message.length() - dotCount);
+                }
+                System.out.printf(" [x] Received '%s'\n", message);
+                Thread.sleep(dotCount * 1000);
+            }
+        }
+        catch (ShutdownSignalException|ConsumerCancelledException|InterruptedException e) {
+            e.printStackTrace();
+        }
+        finally {
+            channel.close();
+            connection.close();
+        }
+    }
+
+    //TODO: Additional test-specific option and argument handling. Delete if not needed.
+    private static class TestOptions implements ParsedOptionSet
     {
         @Override
         public void preParse(Options options)
@@ -56,32 +108,15 @@ public class RMQCSVReceive
 
     public static void main(String[] args) throws IOException
     {
-        RMQCLIOptions rmqOpts = new RMQCLIOptions();
+        RMQCLIOptions rmqOpts = RMQCLIOptions.createForConsumer();
         TestOptions testOpts = new TestOptions();
-        CLIDriver.parse(SYNTAX, args, rmqOpts, testOpts);
-        ConnectionFactory factory = new ConnectionFactory();
-        factory.setHost(rmqOpts.mqhost);
-        Connection connection = factory.newConnection();
-        Channel channel = connection.createChannel();
-
+        CLIDriver options = CLIDriver.parse(SYNTAX, args, rmqOpts, testOpts);
         try {
-            channel.queueDeclare(rmqOpts.mqqueue, false, false, false, null);
-            System.out.println(" [*] Waiting for messages. To exit press CTRL+C");
-            QueueingConsumer consumer = new QueueingConsumer(channel);
-            channel.basicConsume(rmqOpts.mqqueue, false, consumer);
-            while (true) {
-                QueueingConsumer.Delivery delivery = consumer.nextDelivery();
-                String message = new String(delivery.getBody());
-                channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
-                System.out.printf(" [x] Received '%s'\n", message);
-            }
+            receiveMessages(rmqOpts, testOpts, options.args);
         }
-        catch (ShutdownSignalException|ConsumerCancelledException|InterruptedException e) {
+        catch (Exception e) {
             e.printStackTrace();
-        }
-        finally {
-            channel.close();
-            connection.close();
+            System.exit(255);
         }
     }
 }

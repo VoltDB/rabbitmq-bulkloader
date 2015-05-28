@@ -27,9 +27,9 @@ apply plugin: 'eclipse'
 apply plugin: 'application'
 
 project.description = 'VoltDB RabbitMQ Bulk Loader'
-archivesBaseName = 'voltdb-rabbitmq-bulkloader'
-mainClassName = "org.voltdb.bulkloader.RabbitMQBulkLoader"
-applicationName = "rabbitmq-bulkloader"
+archivesBaseName = 'voltdb-rabbitmqloader'
+mainClassName = "org.voltdb.bulkloader.RMQBulkLoader"
+applicationName = "rabbitmqloader"
 
 repositories {
     mavenCentral()
@@ -40,7 +40,7 @@ jar {
     manifest {
         attributes 'Implementation-Title': 'voltdb-rabbitmq-bulkloader',
                    'Implementation-Version': version,
-                   "Main-Class": "org.voltdb.bulkloader.RabbitMQBulkLoader"
+                   "Main-Class": "org.voltdb.bulkloader.RMQBulkLoader"
     }
 }
 
