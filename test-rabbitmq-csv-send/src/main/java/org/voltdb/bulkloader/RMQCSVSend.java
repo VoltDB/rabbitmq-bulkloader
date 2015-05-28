@@ -48,7 +48,9 @@ public class RMQCSVSend
           + ".";
     private static final String HELP_FOOTER = ".\n"
           + "The genspec parameter is a string with one character per "
-          + "generated column. 's' is a string column and 'i' is an integer.";
+          + "generated column. "
+          + "'s' represents a string column. "
+          + "'i' represents an integer column.";
     private static final int HELP_WIDTH = 80;
     private static final String DEFAULT_EXCHANGE_TYPE = "direct";
 
@@ -202,11 +204,13 @@ public class RMQCSVSend
 
     }
 
-    private static void sendMessages(RMQCLIOptions rmqOpts, LineIterator lineIter, RandomSleeper sleeper)
-            throws InterruptedException
+    private static void sendMessages(
+            RMQOptions rmqOpts,
+            RandomSleeper.RSOptions sleeperOpts,
+            TestOptions testOpts) throws InterruptedException
     {
         ConnectionFactory factory = new ConnectionFactory();
-        factory.setHost(rmqOpts.mqhost);
+        factory.setHost(rmqOpts.host);
 
         Connection connection = null;
         Channel channel = null;
@@ -214,9 +218,9 @@ public class RMQCSVSend
         try {
             connection = factory.newConnection();
             channel = connection.createChannel();
-            if (rmqOpts.mqexchange != null) {
-                exchangeName = rmqOpts.mqexchange;
-                channel.exchangeDeclare(exchangeName, rmqOpts.mqextype);
+            if (rmqOpts.exchange != null) {
+                exchangeName = rmqOpts.exchange;
+                channel.exchangeDeclare(exchangeName, rmqOpts.extype);
             }
         }
         catch (IOException e1) {
@@ -225,21 +229,21 @@ public class RMQCSVSend
         }
 
         try {
-            channel.queueDeclare(rmqOpts.mqqueue, true, false, false, null);
+            channel.queueDeclare(rmqOpts.queue, true, false, false, null);
             try {
-                while (lineIter.hasNext()) {
-                    String message = lineIter.next();
+                while (testOpts.lineIter.hasNext()) {
+                    String message = testOpts.lineIter.next();
                     channel.basicPublish(
                             exchangeName,
-                            rmqOpts.mqrouting,
+                            rmqOpts.routing,
                             MessageProperties.TEXT_PLAIN,
                             message.getBytes());
                     System.out.printf(" [x] Sent '%s'\n", message);
-                    sleeper.sleep();
+                    sleeperOpts.sleeper.sleep();
                 }
             }
             finally {
-                lineIter.close();
+                testOpts.lineIter.close();
             }
         }
         catch (IOException e) {
@@ -256,9 +260,16 @@ public class RMQCSVSend
         }
     }
 
-    private static class TestOptionSet implements ParsedOptionSet
+    private static class TestOptions
     {
         public LineIterator lineIter = null;
+
+    }
+
+    private static class TestCLI implements ParsedOptionSet
+    {
+        /// Public option data
+        public TestOptions opts = new TestOptions();
 
         @Override
         @SuppressWarnings("static-access")
@@ -294,7 +305,7 @@ public class RMQCSVSend
             if (csvfilePath != null) {
                 File csvfile = new File(csvfilePath);
                 if (csvfile.exists()) {
-                    this.lineIter = new FileIterator(csvfile);
+                    this.opts.lineIter = new FileIterator(csvfile);
                 }
                 else {
                     driver.addError("File does not exist: %s", csvfilePath);
@@ -302,7 +313,7 @@ public class RMQCSVSend
             }
             else if (genspec != null) {
                 if (checkGenSpec(genspec)) {
-                    this.lineIter = new SequentialCSVGenerator(genspec);
+                    this.opts.lineIter = new SequentialCSVGenerator(genspec);
                 }
                 else {
                     driver.addError("Bad generator specification: %s", genspec);
@@ -327,20 +338,19 @@ public class RMQCSVSend
 
     public static void main(String[] args) throws IOException
     {
-        RMQCLIOptions rmqOpts = RMQCLIOptions.createForProducer(DEFAULT_EXCHANGE_TYPE);
-        TestOptionSet testOpts = new TestOptionSet();
-        RandomSleeper sleeper = new RandomSleeper(null);
-        // By default sleep 1 second between messages.
-        sleeper.setDefaultRange(1000L, 1000L);
-        sleeper.setVerbose(true);
+        // Set up and parse the CLI.
+        RMQCLI rmqCLI = RMQCLI.createForProducer(DEFAULT_EXCHANGE_TYPE);
+        TestCLI testCLI = new TestCLI();
+        RandomSleeper.RSCLI sleeperCLI = RandomSleeper.getCLI(1000L, 1000L, null, true);
         CLIDriver.HelpData helpData = new CLIDriver.HelpData();
         helpData.syntax = HELP_SYNTAX;
         helpData.header = HELP_HEADER;
         helpData.width = HELP_WIDTH;
         helpData.footer = HELP_FOOTER;
-        CLIDriver.parse(helpData, args, rmqOpts, sleeper.getOptionSet(), testOpts);
+        CLIDriver.parse(helpData, args, rmqCLI, sleeperCLI, testCLI);
+
         try {
-            sendMessages(rmqOpts, testOpts.lineIter, sleeper);
+            sendMessages(rmqCLI.opts, sleeperCLI.opts, testCLI.opts);
         }
         catch (InterruptedException e) {
             System.exit(255);

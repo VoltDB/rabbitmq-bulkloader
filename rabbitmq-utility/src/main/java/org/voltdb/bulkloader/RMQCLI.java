@@ -32,7 +32,7 @@ import com.google_voltpatches.common.net.HostAndPort;
 /**
  * Common CLI options for RabbitMQ.
  */
-public class RMQCLIOptions implements CLIDriver.ParsedOptionSet
+public class RMQCLI implements CLIDriver.ParsedOptionSet
 {
     private static final String[] EXCHANGE_TYPES = {
         "direct",
@@ -41,22 +41,13 @@ public class RMQCLIOptions implements CLIDriver.ParsedOptionSet
         "fanout"
     };
 
-    // Option data fields - populated in postParse()
-    public String mqhost = null;
-    public Long mqport = null;
-    public String mqqueue = null;
-    public String mqexchange = null;
-    public String mqrouting = "";
-    public String[] mqbindings = {};
-    public String mquser = null;
-    public String mqpassword = null;
-    public String mqvhost = null;
-    public String amqp = null;
-    public String mqextype = null;
+    /// Public option opts
+    public RMQOptions opts = new RMQOptions();
 
-    private boolean enableExType = false;
-    private boolean enableRoutingKey = false;
-    private boolean enableBindingKey = false;
+    // Private options for configuring CLI.
+    private boolean m_enableExType = false;
+    private boolean m_enableRoutingKey = false;
+    private boolean m_enableBindingKey = false;
 
     static String EXCHANGE_TYPE_LIST;
     {
@@ -70,23 +61,23 @@ public class RMQCLIOptions implements CLIDriver.ParsedOptionSet
         EXCHANGE_TYPE_LIST = sbext.toString();
     }
 
-    private RMQCLIOptions()
+    private RMQCLI()
     {
     }
 
-    public static RMQCLIOptions createForProducer(String defExType)
+    public static RMQCLI createForProducer(String defExType)
     {
-        RMQCLIOptions opts = new RMQCLIOptions();
-        opts.enableExType = true;
-        opts.mqextype = defExType;
-        opts.enableRoutingKey = true;
+        RMQCLI opts = new RMQCLI();
+        opts.m_enableExType = true;
+        opts.opts.extype = defExType;
+        opts.m_enableRoutingKey = true;
         return opts;
     }
 
-    public static RMQCLIOptions createForConsumer()
+    public static RMQCLI createForConsumer()
     {
-        RMQCLIOptions opts = new RMQCLIOptions();
-        opts.enableBindingKey = true;
+        RMQCLI opts = new RMQCLI();
+        opts.m_enableBindingKey = true;
         return opts;
     }
 
@@ -108,44 +99,44 @@ public class RMQCLIOptions implements CLIDriver.ParsedOptionSet
     public void preParse(Options options)
     {
         options.addOption(OptionBuilder
-                            .withLongOpt("mqhost")
-                            .withArgName("mqhost")
+                            .withLongOpt("host")
+                            .withArgName("host")
                             .withType(String.class)
                             .hasArg()
                             .withDescription("RabbitMQ host[:port] (default: localhost)")
                             .create());
         options.addOption(OptionBuilder
-                            .withLongOpt("mqqueue")
-                            .withArgName("mqqueue")
+                            .withLongOpt("queue")
+                            .withArgName("queue")
                             .withType(String.class)
                             .hasArg()
                             .withDescription("RabbitMQ queue name: (default: \"\")")
                             .isRequired()
                             .create());
         options.addOption(OptionBuilder
-                            .withLongOpt("mqexchange")
-                            .withArgName("mqexchange")
+                            .withLongOpt("exchange")
+                            .withArgName("exchange")
                             .withType(String.class)
                             .hasArg()
                             .withDescription("RabbitMQ exchange name")
                             .create());
         options.addOption(OptionBuilder
-                            .withLongOpt("mquser")
-                            .withArgName("mquser")
+                            .withLongOpt("user")
+                            .withArgName("user")
                             .withType(String.class)
                             .hasArg()
                             .withDescription("RabbitMQ user name")
                             .create());
         options.addOption(OptionBuilder
-                            .withLongOpt("mqpassword")
-                            .withArgName("mqpassword")
+                            .withLongOpt("password")
+                            .withArgName("password")
                             .withType(String.class)
                             .hasArg()
                             .withDescription("RabbitMQ password")
                             .create());
         options.addOption(OptionBuilder
-                            .withLongOpt("mqvhost")
-                            .withArgName("mqvhost")
+                            .withLongOpt("vhost")
+                            .withArgName("vhost")
                             .withType(String.class)
                             .hasArg()
                             .withDescription("RabbitMQ virtual host name")
@@ -157,18 +148,18 @@ public class RMQCLIOptions implements CLIDriver.ParsedOptionSet
                             .hasArg()
                             .withDescription("RabbitMQ AMQP URI")
                             .create());
-        if (this.enableRoutingKey) {
+        if (m_enableRoutingKey) {
             options.addOption(OptionBuilder
-                                .withLongOpt("mqrouting")
-                                .withArgName("mqrouting")
+                                .withLongOpt("routing")
+                                .withArgName("routing")
                                 .withType(String.class)
                                 .hasArg()
                                 .withDescription(String.format(
                                         "RabbitMQ routing key (default: \"%s\")",
-                                        this.mqrouting))
+                                        this.opts.routing))
                                 .create());
         }
-        if (this.enableBindingKey) {
+        if (m_enableBindingKey) {
             options.addOption(OptionBuilder
                                 .withLongOpt("mqbinding")
                                 .withArgName("mqbinding")
@@ -177,15 +168,15 @@ public class RMQCLIOptions implements CLIDriver.ParsedOptionSet
                                 .withDescription("RabbitMQ comma-separated binding key patterns")
                                 .create());
         }
-        if (this.enableExType) {
+        if (m_enableExType) {
             options.addOption(OptionBuilder
-                                .withLongOpt("mqextype")
-                                .withArgName("mqextype")
+                                .withLongOpt("extype")
+                                .withArgName("extype")
                                 .withType(String.class)
                                 .hasArg()
                                 .withDescription(String.format(
                                         "RabbitMQ exchange type: %s (default: %s)",
-                                        EXCHANGE_TYPE_LIST, this.mqextype))
+                                        EXCHANGE_TYPE_LIST, this.opts.extype))
                                 .create());
         }
     }
@@ -198,69 +189,69 @@ public class RMQCLIOptions implements CLIDriver.ParsedOptionSet
     {
         HostAndPort hostAndPort = null;
         try {
-            hostAndPort = HostAndPort.fromString(driver.getString("mqhost", "localhost"));
-            this.mqhost = hostAndPort.getHostText();
+            hostAndPort = HostAndPort.fromString(driver.getString("host", "localhost"));
+            this.opts.host = hostAndPort.getHostText();
             if (hostAndPort.hasPort()) {
-                this.mqport = (long) hostAndPort.getPort();
+                this.opts.port = (long) hostAndPort.getPort();
             }
         }
         catch(IllegalArgumentException | IllegalStateException e) {
-            driver.addError("Bad host specifier: %s", this.mqhost);
-            this.mqhost = null;
-            this.mqport = null;
+            driver.addError("Bad host specifier: %s", this.opts.host);
+            this.opts.host = null;
+            this.opts.port = null;
         }
 
-        this.mqqueue = driver.getString("mqqueue", this.mqqueue);
+        this.opts.queue = driver.getString("queue", this.opts.queue);
 
-        this.mqexchange = driver.getString("mqexchange");
-        if (this.mqexchange != null && this.mqexchange.isEmpty()) {
+        this.opts.exchange = driver.getString("exchange");
+        if (this.opts.exchange != null && this.opts.exchange.isEmpty()) {
             driver.addError("Exchange name is empty.");
         }
 
-        this.mquser = driver.getString("mquser");
-        if (this.mquser != null && this.mquser.isEmpty()) {
+        this.opts.user = driver.getString("user");
+        if (this.opts.user != null && this.opts.user.isEmpty()) {
             driver.addError("User name is empty.");
         }
 
-        this.mqpassword = driver.getString("mqpassword");
+        this.opts.password = driver.getString("password");
 
-        this.mqvhost = driver.getString("mqvhost");
-        if (this.mqvhost != null && this.mqvhost.isEmpty()) {
+        this.opts.vhost = driver.getString("vhost");
+        if (this.opts.vhost != null && this.opts.vhost.isEmpty()) {
             driver.addError("Virtual host name is empty.");
         }
 
-        this.amqp = driver.getString("amqp");
-        if (this.amqp != null) {
-            if (this.amqp.isEmpty()) {
+        this.opts.amqp = driver.getString("amqp");
+        if (this.opts.amqp != null) {
+            if (this.opts.amqp.isEmpty()) {
                 driver.addError("AMQP URI is empty.");
                 //TODO: More validation
             }
         }
 
-        if (this.mqexchange == null && this.mqqueue == null && this.amqp == null) {
-            driver.addError("One of these options must be specified: --mqexchange, --mqqueue, or --ampq");
+        if (this.opts.exchange == null && this.opts.queue == null && this.opts.amqp == null) {
+            driver.addError("One of these options must be specified: --exchange, --queue, or --ampq");
         }
 
-        if (this.enableExType) {
+        if (m_enableExType) {
             final String exTypeParam = driver.getTrimmedString(
-                    "mqextype", this.mqextype).toLowerCase();
+                    "extype", this.opts.extype).toLowerCase();
             if(exTypeParam.isEmpty()) {
                 driver.addError("Exchange type is empty.");
             }
             else {
-                this.mqextype = checkExchangeType(exTypeParam);
-                if (this.mqextype == null) {
+                this.opts.extype = checkExchangeType(exTypeParam);
+                if (this.opts.extype == null) {
                     driver.addError("Invalid exchange type: %s", exTypeParam);
                 }
             }
         }
 
-        if (this.enableRoutingKey) {
-            this.mqrouting = driver.getString("mqrouting", this.mqrouting);
+        if (m_enableRoutingKey) {
+            this.opts.routing = driver.getString("routing", this.opts.routing);
         }
 
-        if (this.enableBindingKey) {
-            this.mqbindings = driver.getCommaSeparatedStrings("mqbinding");
+        if (m_enableBindingKey) {
+            this.opts.bindings = driver.getCommaSeparatedStrings("mqbinding");
         }
     }
 }

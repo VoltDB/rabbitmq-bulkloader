@@ -25,16 +25,16 @@
 package org.voltdb.bulkloader;
 
 import java.io.IOException;
+import java.io.Reader;
 import java.net.UnknownHostException;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.apache.commons.cli.OptionBuilder;
-import org.apache.commons.cli.Options;
+import org.supercsv.io.CsvListReader;
+import org.supercsv.prefs.CsvPreference;
 import org.voltcore.logging.VoltLogger;
 import org.voltdb.client.Client;
 import org.voltdb.client.ClientConfig;
@@ -42,9 +42,7 @@ import org.voltdb.client.ClientFactory;
 import org.voltdb.client.ClientImpl;
 import org.voltdb.client.ClientResponse;
 import org.voltdb.utils.BulkLoaderErrorHandler;
-import org.voltdb.utils.CSVBulkDataLoader;
 import org.voltdb.utils.CSVDataLoader;
-import org.voltdb.utils.CSVTupleDataLoader;
 import org.voltdb.utils.RowWithMetaData;
 
 import com.google_voltpatches.common.net.HostAndPort;
@@ -53,23 +51,16 @@ public class RMQBulkLoader
 {
     private static final String HELP_SYNTAX = "(below)";
     private static final String HELP_HEADER = ".\n"
-          + "rabbitmqloader [options] --mqhost server[:port] table-name\n"
+          + "rabbitmqloader [options] --host server[:port] table-name\n"
           + "rabbitmqloader [options] --amqp {uri} table-name\n"
-          + "rabbitmqloader [options] --mqhost server[:port] -p proc-name\n"
+          + "rabbitmqloader [options] --host server[:port] -p proc-name\n"
           + "rabbitmqloader [options] --amqp {uri} -p proc-name\n"
           + ".";
     private static final int HELP_WIDTH = 100;
 
-    private static int DEFAULT_MAX_ERRORS = 100;
-    private static int DEFAULT_FLUSH_INTERVAL = 10;
-    private static int DEFAULT_BATCH_SIZE = 200;
+    static final VoltLogger LOG = new VoltLogger("RABBITMQLOADER");
 
-    private static final VoltLogger LOG = new VoltLogger("RABBITMQLOADER");
-
-    private final MainOptions m_mainOpts;
-    private final RMQCLIOptions m_rmqOpts;
-    private final VoltDBCLIOptions m_voltOpts;
-    private final static AtomicLong m_failedCount = new AtomicLong(0);
+    private final static AtomicLong m_errorCount = new AtomicLong(0);
     private CSVDataLoader m_loader = null;
     private Client m_client = null;
     private ConsumerConnector m_consumer = null;
@@ -77,13 +68,9 @@ public class RMQBulkLoader
 
     /**
      * Bulk loader constructor
-     * @param config  command line options, etc.
      */
-    public RMQBulkLoader(MainOptions mainOpts, RMQCLIOptions rmqOpts, VoltDBCLIOptions voltOpts)
+    public RMQBulkLoader()
     {
-        m_mainOpts = mainOpts;
-        m_rmqOpts = rmqOpts;
-        m_voltOpts = voltOpts;
     }
 
     /**
@@ -124,63 +111,37 @@ public class RMQBulkLoader
      * Perform the bulk load operation from start to finish.
      * @throws Exception
      */
-    public void bulkLoad()
-            throws Exception
+    public void bulkLoad(
+            final BulkLoaderOptions loaderOpts,
+            final RMQOptions rmqOpts,
+            final VoltDBOptions voltOpts) throws Exception
     {
         // Create connection
-        final ClientConfig c_config = new ClientConfig(m_voltOpts.user, m_voltOpts.password);
+        final ClientConfig c_config = new ClientConfig(voltOpts.user, voltOpts.password);
         c_config.setProcedureCallTimeout(0); // Set procedure all to infinite
 
-        m_client = getClient(c_config, m_voltOpts.servers);
+        m_client = getClient(c_config, voltOpts.servers);
 
         ClientImpl clientImpl = (ClientImpl) m_client;
-        BulkLoaderErrorHandler errorHandler = new ErrorHandler();
-        String dbObjTypeName;
-        String dbObjName;
-        if (m_mainOpts.procedure != null) {
-            m_loader = new CSVTupleDataLoader(clientImpl, m_mainOpts.procedure, errorHandler);
-            dbObjName = m_mainOpts.procedure;
-            dbObjTypeName = "procedure";
-        }
-        else {
-            m_loader = new CSVBulkDataLoader(clientImpl, m_mainOpts.table, m_mainOpts.batch.intValue(), errorHandler);
-            dbObjName = m_mainOpts.table;
-            dbObjTypeName = "table";
-        }
-        m_loader.setFlushInterval(m_mainOpts.flush.intValue(), m_mainOpts.flush.intValue());
-        m_consumer = new ConsumerConnector(m_rmqOpts.mqhost, m_rmqOpts.mqqueue, dbObjName);
-        try {
-            m_es = getConsumerExecutor(m_consumer, m_loader);
-            LOG.info(String.format("RabbitMQ consumer started from %s:%s for %s: %s",
-                            m_rmqOpts.mqhost, m_rmqOpts.mqqueue, dbObjTypeName, m_mainOpts.procedure));
-            m_es.awaitTermination(365, TimeUnit.DAYS);
-        }
-        catch (Exception ex) {
-            LOG.error("Error in RabbitMQ Consumer", ex);
-            System.exit(-1);
+        BulkLoaderErrorHandler errorHandler = new ErrorHandler(loaderOpts.maxerrors);
+        m_loader = loaderOpts.createCSVLoader(clientImpl, errorHandler);
+        m_loader.setFlushInterval(loaderOpts.flush.intValue(), loaderOpts.flush.intValue());
+        Reader msgReader = new RMQMessageReader(rmqOpts);
+        LOG.info(String.format("RabbitMQ consumer started from %s:%s for %s: %s",
+                rmqOpts.host, rmqOpts.queue,
+                loaderOpts.dbObjType.toString(), loaderOpts.dbObjName));
+        m_consumer = new ConsumerConnector(msgReader);
+
+        for (BulkLoaderData data : m_consumer) {
+            try {
+                m_loader.insertRow(data.metaData, data.rowData);
+            }
+            catch (Exception e) {
+                LOG.error("Error in RabbitMQ Consumer", e);
+                System.exit(-1);
+            }
         }
         close();
-    }
-
-    private ExecutorService getConsumerExecutor(ConsumerConnector consumer, CSVDataLoader loader)
-            throws Exception
-    {
-        Map<String, Integer> topicCountMap = new HashMap<>();
-        //Get this from config or arg. Use 3 threads default.
-        ExecutorService executor = Executors.newFixedThreadPool(3);
-        /*
-        topicCountMap.put(m_config.topic, 3);
-        Map<String, List<KafkaStream<byte[], byte[]>>> consumerMap = consumer.m_consumer.createMessageStreams(topicCountMap);
-        List<KafkaStream<byte[], byte[]>> streams = consumerMap.get(m_config.topic);
-
-        // now launch all the threads for partitions.
-        for (final KafkaStream stream : streams) {
-            KafkaConsumer bconsumer = new KafkaConsumer(stream, loader);
-            executor.submit(bconsumer);
-        }
-        */
-
-        return executor;
     }
 
     /**
@@ -202,122 +163,158 @@ public class RMQBulkLoader
         return client;
     }
 
-    private static class ConsumerConnector
+    private static class BulkLoaderData
     {
-        public ConsumerConnector(String mqserver, String mqqueue, String string)
+        public final RowWithMetaData metaData;
+        public final Object[] rowData;
+
+        public BulkLoaderData(final RowWithMetaData metaData, Object[] rowData)
         {
-            // TODO Auto-generated constructor stub
+            this.metaData = metaData;
+            this.rowData = rowData;
+        }
+    }
+
+    private static class ConsumerConnector implements Iterable<BulkLoaderData>
+    {
+        private final Reader m_msgReader;
+        private final CsvPreference m_csvPrefs;
+        private final CsvListReader m_csvReader;
+
+        public ConsumerConnector(final Reader msgReader)
+        {
+            m_msgReader = msgReader;
+            m_csvPrefs = CsvPreference.STANDARD_PREFERENCE;
+            m_csvReader = new CsvListReader(m_msgReader, m_csvPrefs);
         }
 
         public void stop()
         {
-            // TODO Auto-generated method stub
-
+            try {
+                m_msgReader.close();
+            }
+            catch (IOException e) {
+                LOG.error("Failed to close message reader.", e);
+            }
         }
+
+        @Override
+        public Iterator<BulkLoaderData> iterator()
+        {
+            return new ConnectorDataIterator();
+        }
+
+        private class ConnectorDataIterator implements Iterator<BulkLoaderData>
+        {
+            /// Caching the data for one row allows hasNext() to look ahead.
+            private BulkLoaderData m_rowCache = null;
+            /// Row count.
+            private int m_count = 0;
+            /// Set to true when done.
+            private boolean m_done = false;
+
+            //=== Iterator required overrides
+
+            @Override
+            public boolean hasNext()
+            {
+                return cacheRowAsNeeded();
+            }
+
+            @Override
+            public synchronized BulkLoaderData next()
+            {
+                // Cache a row if hasNext() wasn't previously called.
+                cacheRowAsNeeded();
+                return m_rowCache;
+            }
+
+            @Override
+            public void remove()
+            {
+                throw new UnsupportedOperationException();
+            }
+
+            //=== Private methods
+
+            /**
+             * Check if a row is already cached or attempt to cache the next one.
+             * Used for both hasNext() and next().
+             * @return true if a row is available.
+             */
+            private synchronized boolean cacheRowAsNeeded()
+            {
+                if (!m_done && m_rowCache == null) {
+                    try {
+                        // Cache a row to support hasNext() followed by next().
+                        List<String> rowStringList = m_csvReader.read();
+                        if (rowStringList != null) {
+                            // Cache the next row.
+                            m_count++;
+                            String rowText = m_csvReader.getUntokenizedRow();
+                            RowWithMetaData metaData = new RowWithMetaData(rowText, m_count);
+                            Object[] rowData = rowStringList.toArray();
+                            m_rowCache = new BulkLoaderData(metaData, rowData);
+                        }
+                    }
+                    catch (IOException e) {
+                        e.printStackTrace();
+                        m_rowCache = null;
+                    }
+                    m_done = (m_rowCache != null);
+                }
+                return !m_done;
+            }
+        }
+    }
+
+    private static boolean isFatalStatus(byte status)
+    {
+        return (status != ClientResponse.USER_ABORT && status != ClientResponse.GRACEFUL_FAILURE);
 
     }
 
-    public static class ErrorHandler implements BulkLoaderErrorHandler
+    public class ErrorHandler implements BulkLoaderErrorHandler
     {
+        private final long m_maxerrors;
+
+        public ErrorHandler(long maxerrors)
+        {
+            m_maxerrors = maxerrors;
+        }
 
         @Override
         public boolean handleError(RowWithMetaData metaData, ClientResponse response, String error)
         {
-            // TODO Auto-generated method stub
-            return false;
+            boolean okay = false;
+            if (response != null) {
+                byte status = response.getStatus();
+                if (status != ClientResponse.SUCCESS) {
+                    LOG.error(String.format("Failed to insert row: %s", metaData.rawLine));
+                    if (tooManyErrors(m_errorCount.incrementAndGet()) || isFatalStatus(status)) {
+                        try {
+                            LOG.error("RabbitMQ bulk loader will exit.");
+                            closeConsumer();
+                            okay = true;
+                        }
+                        catch (InterruptedException ex) {
+                            // okay = false
+                        }
+                    }
+                }
+            }
+            return okay;
+        }
+
+        private boolean tooManyErrors(long errorCount)
+        {
+            return (m_maxerrors > 0 && errorCount > m_maxerrors);
         }
 
         @Override
         public boolean hasReachedErrorLimit()
         {
-            // TODO Auto-generated method stub
-            return false;
-        }
-
-    }
-
-    /**
-     * Main configuration options.
-     */
-    public static class MainOptions implements CLIDriver.ParsedOptionSet
-    {
-        // Either table or procedure will be non-null, but not both.
-        String procedure = null;
-        String table = null;
-        Long maxerrors = (long) DEFAULT_MAX_ERRORS;
-        Long flush = (long) DEFAULT_FLUSH_INTERVAL;
-        Long batch = (long) DEFAULT_BATCH_SIZE;
-
-        @Override
-        @SuppressWarnings("static-access")
-        public void preParse(Options options)
-        {
-            options.addOption(OptionBuilder
-                    .withLongOpt("procedure")
-                    .withArgName("procedure")
-                    .withType(String.class)
-                    .hasArg()
-                    .withDescription("insert the data using this procedure")
-                    .create('p'));
-            options.addOption(OptionBuilder
-                    .withLongOpt("maxerrors")
-                    .withArgName("maxerrors")
-                    .withType(Number.class)
-                    .hasArg()
-                    .withDescription(String.format(
-                            "maximum number of errors before giving up (default: %d)",
-                            this.maxerrors))
-                    .create('m'));
-            options.addOption(OptionBuilder
-                    .withLongOpt("flush")
-                    .withArgName("flush")
-                    .withType(Number.class)
-                    .hasArg()
-                    .withDescription(String.format(
-                            "periodic flush interval in seconds. (default: %d)",
-                            this.flush))
-                    .create('f'));
-            options.addOption(OptionBuilder
-                    .withLongOpt("batch")
-                    .withArgName("batch")
-                    .withType(Number.class)
-                    .hasArg()
-                    .withDescription(String.format(
-                            "batch size for processing. (default: %d)",
-                            this.batch))
-                    .create('b'));
-        }
-
-        /**
-         * Validate command line options.
-         */
-        @Override
-        public void postParse(CLIDriver driver)
-        {
-            if (driver.args.length > 1) {
-                driver.abort(true, "Only one argument is allowed.");
-            }
-            if (driver.args.length > 0) {
-                this.table = driver.args[0].trim();
-                if (this.table.isEmpty()) {
-                    this.table = null;
-                }
-            }
-            this.procedure = driver.getTrimmedString("procedure");
-            if (this.table == null && this.procedure == null) {
-                driver.abort(true, "Either a table or a procedure name is required.");
-            }
-            if (this.table != null && this.procedure != null) {
-                driver.abort(true, "Either a table or a procedure name is required, but not both.");
-            }
-            this.batch = driver.getNumber("batch", this.batch);
-            if (this.batch < 0) {
-                driver.abort(true, "Batch size must be >= 0.");
-            }
-            this.flush = driver.getNumber("flush", this.flush);
-            if (this.flush <= 0) {
-                driver.abort(true, "Periodic flush interval must be > 0");
-            }
+            return tooManyErrors(m_errorCount.get());
         }
     }
 
@@ -329,17 +326,19 @@ public class RMQBulkLoader
      */
     public static void main(String[] args)
     {
-        MainOptions mainOpts = new MainOptions();
-        RMQCLIOptions rmqOpts = RMQCLIOptions.createForConsumer();
-        VoltDBCLIOptions voltOpts = new VoltDBCLIOptions();
+        // Set up and parse the CLI.
+        BulkLoaderCLI loaderOpts = new BulkLoaderCLI();
+        RMQCLI rmqOpts = RMQCLI.createForConsumer();
+        VoltDBCLI voltOpts = new VoltDBCLI();
         CLIDriver.HelpData helpData = new CLIDriver.HelpData();
         helpData.syntax = HELP_SYNTAX;
         helpData.header = HELP_HEADER;
         helpData.width = HELP_WIDTH;
-        CLIDriver.parse(helpData, args, mainOpts, rmqOpts, voltOpts);
+        CLIDriver.parse(helpData, args, loaderOpts, rmqOpts, voltOpts);
+
         try {
-            final RMQBulkLoader loader = new RMQBulkLoader(mainOpts, rmqOpts, voltOpts);
-            loader.bulkLoad();
+            final RMQBulkLoader loader = new RMQBulkLoader();
+            loader.bulkLoad(loaderOpts.opts, rmqOpts.opts, voltOpts.opts);
         }
         catch (Exception e) {
             LOG.error("Failure in RabbitMQ bulk loader", e);

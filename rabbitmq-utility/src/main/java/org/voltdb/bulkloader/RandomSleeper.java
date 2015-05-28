@@ -33,13 +33,20 @@ import org.voltdb.bulkloader.CLIDriver.ParsedOptionSet;
 public class RandomSleeper
 {
     private final Random random;
-    private final OptionSet opts = new OptionSet();
-    private boolean verbose = false;
+    private final RSOptions opts = new RSOptions();
 
-    public static class OptionSet implements ParsedOptionSet
+    public static class RSOptions
     {
         public Long sleepmin = null;
         public Long sleepmax = null;
+        public Long seed = null;
+        public RandomSleeper sleeper;
+        public boolean verbose = false;
+    }
+
+    public static class RSCLI implements ParsedOptionSet
+    {
+        public RSOptions opts = new RSOptions();
 
         @Override
         @SuppressWarnings("static-access")
@@ -59,29 +66,40 @@ public class RandomSleeper
                     .hasArg()
                     .withDescription("maximum sleep milliseconds")
                     .create());
+            options.addOption(OptionBuilder
+                    .withLongOpt("seed")
+                    .withArgName("seed")
+                    .withType(Number.class)
+                    .hasArg()
+                    .withDescription("random seed")
+                    .create());
         }
 
         @Override
         public void postParse(CLIDriver driver)
         {
-            this.sleepmin = driver.getNumber("sleepmin", this.sleepmin);
-            this.sleepmax = driver.getNumber("sleepmax", this.sleepmax);
+            this.opts.sleepmin = driver.getNumber("sleepmin", this.opts.sleepmin);
+            this.opts.sleepmax = driver.getNumber("sleepmax", this.opts.sleepmax);
             // Values will either both be null or they will both be set.
-            if (this.sleepmin == null && this.sleepmax != null) {
-                this.sleepmin = 0L;
+            if (this.opts.sleepmin == null && this.opts.sleepmax != null) {
+                this.opts.sleepmin = 0L;
             }
-            if (this.sleepmax == null && this.sleepmin != null) {
-                this.sleepmax = this.sleepmin;
+            if (this.opts.sleepmax == null && this.opts.sleepmin != null) {
+                this.opts.sleepmax = this.opts.sleepmin;
             }
-            if (this.sleepmin != null) {
+            if (this.opts.sleepmin != null) {
                 // Effectively checks both max and min are not negative.
-                if (this.sleepmin < 0) {
+                if (this.opts.sleepmin < 0) {
                     driver.addError("Sleep milliseconds must be >= 0");
                 }
-                if (this.sleepmax < this.sleepmin) {
+                if (this.opts.sleepmax < this.opts.sleepmin) {
                     driver.addError("Maximum sleep milliseconds must be >= minimum");
                 }
             }
+            this.opts.seed = driver.getNumber("seed", this.opts.seed);
+            this.opts.sleeper = new RandomSleeper(this.opts.seed);
+            this.opts.sleeper.setRange(this.opts.sleepmin, this.opts.sleepmax);
+            this.opts.sleeper.setVerbose(this.opts.verbose);
         }
     }
 
@@ -90,12 +108,17 @@ public class RandomSleeper
         this.random = seed != null ? new Random(seed) : new Random();
     }
 
-    public ParsedOptionSet getOptionSet()
+    public static RSCLI getCLI(Long defaultSleepmin, Long defaultSleepmax, Long seed, boolean verbose)
     {
-        return opts;
+        RSCLI cli = new RSCLI();
+        cli.opts.sleepmin = defaultSleepmin;
+        cli.opts.sleepmax = defaultSleepmax;
+        cli.opts.seed = seed;
+        cli.opts.verbose = verbose;
+        return cli;
     }
 
-    public void setDefaultRange(Long sleepmin, Long sleepmax)
+    public void setRange(Long sleepmin, Long sleepmax)
     {
         this.opts.sleepmin = sleepmin;
         this.opts.sleepmax = sleepmax;
@@ -103,7 +126,7 @@ public class RandomSleeper
 
     public void setVerbose(boolean verbose)
     {
-        this.verbose = verbose;
+        this.opts.verbose = verbose;
     }
 
     public void sleep() throws InterruptedException
@@ -112,7 +135,7 @@ public class RandomSleeper
             int delta = this.opts.sleepmax.intValue() - this.opts.sleepmin.intValue();
             long offset = delta == 0 ? 0 : this.random.nextInt(delta);
             long sleepMillis = this.opts.sleepmin + offset;
-            if (this.verbose) {
+            if (this.opts.verbose) {
                 System.out.printf("  (sleep %d)\n", sleepMillis);
             }
             Thread.sleep(sleepMillis);

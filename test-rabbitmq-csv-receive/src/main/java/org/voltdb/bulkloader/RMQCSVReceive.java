@@ -40,28 +40,28 @@ public class RMQCSVReceive
 {
     private static final String SYNTAX = "test-rabbitmq-csv-receive [options ...]";
 
-    public static void receiveMessages(RMQCLIOptions rmqOpts, TestOptions testOpts, String[] args)
+    public static void receiveMessages(RMQOptions rmqOpts, TestOptions testOpts, String[] args)
             throws IOException
     {
         ConnectionFactory factory = new ConnectionFactory();
-        factory.setHost(rmqOpts.mqhost);
+        factory.setHost(rmqOpts.host);
         Connection connection = factory.newConnection();
         Channel channel = connection.createChannel();
-        if (rmqOpts.mqexchange != null) {
-            if (rmqOpts.mqextype != null) {
-                channel.exchangeDeclare(rmqOpts.mqexchange, rmqOpts.mqextype);
+        if (rmqOpts.exchange != null) {
+            if (rmqOpts.extype != null) {
+                channel.exchangeDeclare(rmqOpts.exchange, rmqOpts.extype);
             }
-            for (String bindingKey : rmqOpts.mqbindings) {
-                channel.queueBind(rmqOpts.mqqueue, rmqOpts.mqexchange, bindingKey);
+            for (String bindingKey : rmqOpts.bindings) {
+                channel.queueBind(rmqOpts.queue, rmqOpts.exchange, bindingKey);
             }
         }
 
         try {
-            channel.queueDeclare(rmqOpts.mqqueue, true, false, false, null);
+            channel.queueDeclare(rmqOpts.queue, true, false, false, null);
             System.out.println(" [*] Waiting for messages. To exit press CTRL+C");
             channel.basicQos(1);
             QueueingConsumer consumer = new QueueingConsumer(channel);
-            channel.basicConsume(rmqOpts.mqqueue, false, consumer);
+            channel.basicConsume(rmqOpts.queue, false, consumer);
             while (true) {
                 QueueingConsumer.Delivery delivery = consumer.nextDelivery();
                 String message = new String(delivery.getBody());
@@ -93,8 +93,15 @@ public class RMQCSVReceive
     }
 
     //TODO: Additional test-specific option and argument handling. Delete if not needed.
-    private static class TestOptions implements ParsedOptionSet
+    private static class TestOptions
     {
+    }
+
+    private static class TestCLI implements ParsedOptionSet
+    {
+        /// Public option data
+        public TestOptions opts = new TestOptions();
+
         @Override
         public void preParse(Options options)
         {
@@ -108,11 +115,11 @@ public class RMQCSVReceive
 
     public static void main(String[] args) throws IOException
     {
-        RMQCLIOptions rmqOpts = RMQCLIOptions.createForConsumer();
-        TestOptions testOpts = new TestOptions();
-        CLIDriver options = CLIDriver.parse(SYNTAX, args, rmqOpts, testOpts);
+        RMQCLI rmqCLI = RMQCLI.createForConsumer();
+        TestCLI testCLI = new TestCLI();
+        CLIDriver options = CLIDriver.parse(SYNTAX, args, rmqCLI, testCLI);
         try {
-            receiveMessages(rmqOpts, testOpts, options.args);
+            receiveMessages(rmqCLI.opts, testCLI.opts, options.args);
         }
         catch (Exception e) {
             e.printStackTrace();

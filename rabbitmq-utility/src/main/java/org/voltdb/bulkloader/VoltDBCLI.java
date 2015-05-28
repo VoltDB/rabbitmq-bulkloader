@@ -30,11 +30,10 @@ import org.voltdb.client.Client;
 
 import com.google_voltpatches.common.net.HostAndPort;
 
-public class VoltDBCLIOptions implements CLIDriver.ParsedOptionSet
+public class VoltDBCLI implements CLIDriver.ParsedOptionSet
 {
-    public HostAndPort[] servers = null;
-    public String user = null;
-    public String password = null;
+    // Public option opts
+    public VoltDBOptions opts = new VoltDBOptions();
 
     @Override
     @SuppressWarnings("static-access")
@@ -80,19 +79,19 @@ public class VoltDBCLIOptions implements CLIDriver.ParsedOptionSet
     {
         String[] hostSpecs = driver.getCommaSeparatedStrings("servers", "localhost");
         Long defaultPort = driver.getNumber("port", (long) Client.VOLTDB_SERVER_PORT);
-        this.servers = new HostAndPort[hostSpecs.length];
+        this.opts.servers = new HostAndPort[hostSpecs.length];
         for (int i = 0; i < hostSpecs.length; ++i) {
             try {
-                this.servers[i] = HostAndPort.fromString(hostSpecs[i]);
-                if (!this.servers[i].hasPort()) {
-                    this.servers[i] = HostAndPort.fromParts(this.servers[i].getHostText(), defaultPort.intValue());
+                this.opts.servers[i] = HostAndPort.fromString(hostSpecs[i]);
+                if (!this.opts.servers[i].hasPort()) {
+                    this.opts.servers[i] = HostAndPort.fromParts(this.opts.servers[i].getHostText(), defaultPort.intValue());
                 }
             }
             catch(IllegalArgumentException e) {
                 driver.addError("Bad host[:port]: %s: %s", hostSpecs[i], e.getLocalizedMessage());
             }
         }
-        this.user = driver.getString("user");
-        this.password = driver.getString("password");
+        this.opts.user = driver.getString("user");
+        this.opts.password = driver.getString("password");
     }
 }

@@ -201,7 +201,7 @@ public class CLIDriver
      * Parse arguments and incorporate additional options, if provided.
      * Core MQ options are accessible through public members, while added
      * options must be accessed through the get<type>() methods. To fully
-     * customize the directly accessible data members create a subclass.
+     * customize the directly accessible opts members create a subclass.
      *
      * @param args  command line arguments (and options)
      * @param userOptionSets  user parsed option sets

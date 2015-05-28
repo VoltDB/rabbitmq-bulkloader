@@ -22,19 +22,43 @@
  * THE SOFTWARE.
  */
 
-apply plugin: 'java'
-apply plugin: 'eclipse'
+package org.voltdb.bulkloader;
 
-project.description = 'VoltDB RabbitMQ Utility'
-archivesBaseName = 'voltdb-rabbitmq-utility'
+/**
+ * RabbitMQ connection options.
+ */
+public class RMQOptions
+{
+    /// Host name or IP address
+    public String host = null;
 
-repositories {
-    mavenCentral()
-    jcenter()
-}
+    /// Host port
+    public Long port = null;
 
-dependencies {
-    compile 'org.voltdb:voltdbclient:latest.release'
-    compile 'com.rabbitmq:amqp-client:3.5.1'
-    compile 'commons-cli:commons-cli:1.2'
+    /// RMQ queue name
+    public String queue = null;
+
+    /// RMQ exchange name
+    public String exchange = null;
+
+    /// RMQ exchange type
+    public String extype = null;
+
+    /// RMQ routing key
+    public String routing = "";
+
+    /// RMQ binding strings/patterns
+    public String[] bindings = new String[] {};
+
+    /// RMQ login user
+    public String user = null;
+
+    /// RMQ login password
+    public String password = null;
+
+    /// RMQ virtual host
+    public String vhost = null;
+
+    /// AMQP URI
+    public String amqp = null;
 }

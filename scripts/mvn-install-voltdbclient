@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+VHOME=$(cd ../../voltdb; pwd)
+if [ ! -e "$VHOME/version.txt" ]; then
+    echo "ERROR: $VHOME/version.txt does not exist."
+    exit 255
+fi
+VVER=$(cat $VHOME/version.txt)
+VJAR=$VHOME/voltdb/voltdbclient-$VVER.jar
+mvn install:install-file -Dfile=$VJAR -DgroupId=org.voltdb -DartifactId=voltdbclient -Dversion=$VVER -Dpackaging=jar || exit 255
