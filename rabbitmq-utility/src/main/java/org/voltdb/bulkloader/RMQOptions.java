@@ -45,7 +45,7 @@ public class RMQOptions
     public String extype = null;
 
     /// RMQ routing key
-    public String routing = "";
+    public String routing = null;
 
     /// RMQ binding strings/patterns
     public String[] bindings = new String[] {};
