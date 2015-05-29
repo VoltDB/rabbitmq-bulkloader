@@ -215,6 +215,8 @@ public class RMQCSVSend
         Connection connection = null;
         Channel channel = null;
         String exchangeName = "";
+        // Use the queue name if the routing key is not specified.
+        String routingKey = rmqOpts.routing != null ? rmqOpts.routing : rmqOpts.queue;
         try {
             connection = factory.newConnection();
             channel = connection.createChannel();
@@ -235,7 +237,7 @@ public class RMQCSVSend
                     String message = testOpts.lineIter.next();
                     channel.basicPublish(
                             exchangeName,
-                            rmqOpts.routing,
+                            routingKey,
                             MessageProperties.TEXT_PLAIN,
                             message.getBytes());
                     System.out.printf(" [x] Sent '%s'\n", message);
