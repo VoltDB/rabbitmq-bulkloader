@@ -148,6 +148,11 @@ public class RMQCLI implements CLIDriver.ParsedOptionSet
                             .hasArg()
                             .withDescription("RabbitMQ AMQP URI")
                             .create());
+        options.addOption(OptionBuilder
+                            .withLongOpt("persistent")
+                            .withArgName("persistent")
+                            .withDescription("RabbitMQ queue should be persistent")
+                            .create());
         if (m_enableRoutingKey) {
             options.addOption(OptionBuilder
                                 .withLongOpt("routing")
@@ -231,6 +236,8 @@ public class RMQCLI implements CLIDriver.ParsedOptionSet
         if (this.opts.exchange == null && this.opts.queue == null && this.opts.amqp == null) {
             driver.addError("One of these options must be specified: --exchange, --queue, or --ampq");
         }
+
+        this.opts.persistent = driver.getBoolean("persistent");
 
         if (m_enableExType) {
             final String exTypeParam = driver.getTrimmedString(
