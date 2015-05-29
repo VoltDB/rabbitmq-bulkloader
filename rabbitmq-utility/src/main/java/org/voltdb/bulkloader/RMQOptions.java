@@ -61,4 +61,7 @@ public class RMQOptions
 
     /// AMQP URI
     public String amqp = null;
+
+    /// Make the queue persistent when true
+    public boolean persistent = false;
 }

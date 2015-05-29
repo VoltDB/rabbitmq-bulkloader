@@ -226,7 +226,10 @@ public class RMQBulkLoader
             {
                 // Cache a row if hasNext() wasn't previously called.
                 cacheRowAsNeeded();
-                return m_rowCache;
+                // Return the row and drop it from the cache.
+                BulkLoaderData rowData = m_rowCache;
+                m_rowCache = null;
+                return rowData;
             }
 
             @Override
@@ -261,7 +264,7 @@ public class RMQBulkLoader
                         e.printStackTrace();
                         m_rowCache = null;
                     }
-                    m_done = (m_rowCache != null);
+                    m_done = (m_rowCache == null);
                 }
                 return !m_done;
             }

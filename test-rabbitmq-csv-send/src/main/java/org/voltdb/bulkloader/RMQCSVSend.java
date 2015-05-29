@@ -231,7 +231,7 @@ public class RMQCSVSend
         }
 
         try {
-            channel.queueDeclare(rmqOpts.queue, true, false, false, null);
+            channel.queueDeclare(rmqOpts.queue, rmqOpts.persistent, false, false, null);
             try {
                 while (testOpts.lineIter.hasNext()) {
                     String message = testOpts.lineIter.next();

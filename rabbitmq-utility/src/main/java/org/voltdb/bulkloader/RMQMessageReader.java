@@ -46,8 +46,8 @@ class RMQMessageReader extends Reader
     private Connection m_connection = null;
     private Channel m_channel = null;
     private QueueingConsumer m_consumer = null;
-    // Current message (never null).
-    private String m_message = "";
+    // Current message (non-null when a message needed to be broken into pieces).
+    private String m_message = null;
     // Position to continue character extraction.
     private int m_messagePos = 0;
 
@@ -82,7 +82,7 @@ class RMQMessageReader extends Reader
                 }
             }
 
-            m_channel.queueDeclare(m_opts.queue, true, false, false, null);
+            m_channel.queueDeclare(m_opts.queue, m_opts.persistent, false, false, null);
             m_channel.basicQos(1);
             m_consumer = new QueueingConsumer(m_channel);
             m_channel.basicConsume(m_opts.queue, false, m_consumer);
@@ -101,35 +101,16 @@ class RMQMessageReader extends Reader
             initRabbitMQ();
         }
 
-        // Assume m_message is non-null and m_messagePos is valid.
-        assert m_message != null;
-        assert m_messagePos >= 0;
-        assert m_messagePos <= m_message.length();
-
-        // Move characters into the buffer and get new message(s) until
-        // the request is satisfied.
-        int wasRead = 0;
-        while (true) {
-
-            if (m_messagePos < m_message.length()) {
-
-                // Pull some or all remaining characters from the current message.
-                int toRead = Math.min(len - wasRead, m_message.length() - m_messagePos);
-                m_message.getChars(m_messagePos, toRead, cbuf, off + wasRead);
-                wasRead += toRead;
-
-                if (wasRead == len) {
-                    // DONE!
-                    break;
-                }
-            }
-
-            // Buffer still needs feeding. Get another RabbitMQ message.
+        if (m_message == null) {
+            // Get another RabbitMQ message.
             QueueingConsumer.Delivery delivery;
             try {
+System.err.printf("Waiting for message...\n");
                 delivery = m_consumer.nextDelivery();
-                m_message = new String(delivery.getBody());
+                m_message = new String(delivery.getBody()) + '\n';
+System.err.printf("Message: %s", m_message);
                 m_messagePos = 0;
+                //TODO: Ack/Nack based on success/failure.
                 m_channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
             }
             catch (ShutdownSignalException|ConsumerCancelledException e) {
@@ -137,13 +118,27 @@ class RMQMessageReader extends Reader
                 throw new IOException("Failed to read from the RabbitMQ stream.", e);
             }
             catch (InterruptedException e) {
-                wasRead = -1;
                 close();
-                break;
+                return -1;
             }
         }
 
-        return wasRead;
+        int remaining = m_message.length() - m_messagePos;
+        int retCount = -1;
+        if (remaining > len) {
+            // Ship a piece remaining message portion.
+            m_message.getChars(m_messagePos, len, cbuf, off);
+            m_messagePos += len;
+            retCount = len;
+        }
+        else {
+            // Ship the entire remaining message portion.
+            m_message.getChars(m_messagePos, remaining, cbuf, off);
+            m_message = null;
+            m_messagePos = 0;
+            retCount = remaining;
+        }
+        return retCount;
     }
 
     @Override

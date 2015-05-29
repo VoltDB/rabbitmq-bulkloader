@@ -57,7 +57,7 @@ public class RMQCSVReceive
         }
 
         try {
-            channel.queueDeclare(rmqOpts.queue, true, false, false, null);
+            channel.queueDeclare(rmqOpts.queue, rmqOpts.persistent, false, false, null);
             System.out.println(" [*] Waiting for messages. To exit press CTRL+C");
             channel.basicQos(1);
             QueueingConsumer consumer = new QueueingConsumer(channel);
