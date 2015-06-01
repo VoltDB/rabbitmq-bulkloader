@@ -154,11 +154,17 @@ public class RMQBulkLoader
      * @throws UnknownHostException
      */
     public static Client getClient(ClientConfig config, HostAndPort[] servers)
-            throws UnknownHostException, IOException
+            throws IOException
     {
         final Client client = ClientFactory.createClient(config);
-        for (HostAndPort server : servers) {
-            client.createConnection(server.getHostText(), server.getPort());
+        try {
+            for (HostAndPort server : servers) {
+                client.createConnection(server.getHostText(), server.getPort());
+            }
+        }
+        catch (IOException e) {
+            throw new IOException(String.format("Failed to connect to VoltDB: %s",
+                                                e.getLocalizedMessage()), e);
         }
         return client;
     }

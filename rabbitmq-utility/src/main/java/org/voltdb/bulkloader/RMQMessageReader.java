@@ -105,17 +105,16 @@ class RMQMessageReader extends Reader
             // Get another RabbitMQ message.
             QueueingConsumer.Delivery delivery;
             try {
-System.err.printf("Waiting for message...\n");
                 delivery = m_consumer.nextDelivery();
                 m_message = new String(delivery.getBody()) + '\n';
-System.err.printf("Message: %s", m_message);
                 m_messagePos = 0;
                 //TODO: Ack/Nack based on success/failure.
                 m_channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
             }
             catch (ShutdownSignalException|ConsumerCancelledException e) {
                 close();
-                throw new IOException("Failed to read from the RabbitMQ stream.", e);
+                throw new IOException(String.format("Failed to read from the RabbitMQ stream.",
+                                                    e.getLocalizedMessage()), e);
             }
             catch (InterruptedException e) {
                 close();
