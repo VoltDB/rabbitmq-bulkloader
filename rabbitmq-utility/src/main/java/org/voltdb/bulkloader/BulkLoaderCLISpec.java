@@ -26,9 +26,9 @@ package org.voltdb.bulkloader;
 
 import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
-import org.voltdb.bulkloader.BulkLoaderOptions.DBObjType;
+import org.voltdb.bulkloader.BulkLoaderOptions.TargetType;
 
-public class BulkLoaderCLI implements CLIDriver.ParsedOptionSet
+public class BulkLoaderCLISpec implements CLIDriver.CLISpec
 {
     // Public option opts
     public BulkLoaderOptions opts = new BulkLoaderOptions();
@@ -83,23 +83,23 @@ public class BulkLoaderCLI implements CLIDriver.ParsedOptionSet
             driver.abort(true, "Only one argument is allowed.");
         }
         if (driver.args.length > 0) {
-            this.opts.dbObjName = driver.args[0].trim();
-            if (this.opts.dbObjName.isEmpty()) {
-                this.opts.dbObjName = null;
+            this.opts.targetName = driver.args[0].trim();
+            if (this.opts.targetName.isEmpty()) {
+                this.opts.targetName = null;
             }
             else {
-                this.opts.dbObjType = DBObjType.TABLE;
+                this.opts.targetType = TargetType.TABLE;
             }
         }
         String procedure = driver.getTrimmedString("procedure");
         if (procedure != null) {
-            if (this.opts.dbObjType != null) {
+            if (this.opts.targetType != null) {
                 driver.abort(true, "Either a table or a procedure name is required, but not both.");
             }
-            this.opts.dbObjType = DBObjType.PROCEDURE;
-            this.opts.dbObjName = procedure;
+            this.opts.targetType = TargetType.PROCEDURE;
+            this.opts.targetName = procedure;
         }
-        if (this.opts.dbObjType == null) {
+        if (this.opts.targetType == null) {
             driver.abort(true, "Either a table or a procedure name is required.");
         }
         this.opts.batch = driver.getNumber("batch", this.opts.batch);

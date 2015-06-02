@@ -30,7 +30,7 @@ import org.voltdb.client.Client;
 
 import com.google_voltpatches.common.net.HostAndPort;
 
-public class VoltDBCLI implements CLIDriver.ParsedOptionSet
+public class VoltDBCLISpec implements CLIDriver.CLISpec
 {
     // Public option opts
     public VoltDBOptions opts = new VoltDBOptions();

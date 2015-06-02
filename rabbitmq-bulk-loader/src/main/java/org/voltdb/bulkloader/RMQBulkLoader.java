@@ -26,11 +26,8 @@ package org.voltdb.bulkloader;
 
 import java.io.IOException;
 import java.io.Reader;
-import java.net.UnknownHostException;
 import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.supercsv.io.CsvListReader;
@@ -64,7 +61,6 @@ public class RMQBulkLoader
     private CSVDataLoader m_loader = null;
     private Client m_client = null;
     private ConsumerConnector m_consumer = null;
-    private ExecutorService m_es = null;
 
     /**
      * Bulk loader constructor
@@ -82,11 +78,6 @@ public class RMQBulkLoader
         if (m_consumer != null) {
             m_consumer.stop();
             m_consumer = null;
-        }
-        if (m_es != null) {
-            m_es.shutdownNow();
-            m_es.awaitTermination(365, TimeUnit.DAYS);
-            m_es = null;
         }
     }
 
@@ -109,6 +100,9 @@ public class RMQBulkLoader
 
     /**
      * Perform the bulk load operation from start to finish.
+     * @param loaderOpts  bulk loader options
+     * @param rmqOpts  RabbitMQ options
+     * @param voltOpts  VoltDB options
      * @throws Exception
      */
     public void bulkLoad(
@@ -123,21 +117,24 @@ public class RMQBulkLoader
         m_client = getClient(c_config, voltOpts.servers);
 
         ClientImpl clientImpl = (ClientImpl) m_client;
-        BulkLoaderErrorHandler errorHandler = new ErrorHandler(loaderOpts.maxerrors);
+        final BulkLoaderErrorHandler errorHandler = new ErrorHandler(loaderOpts.maxerrors);
         m_loader = loaderOpts.createCSVLoader(clientImpl, errorHandler);
         m_loader.setFlushInterval(loaderOpts.flush.intValue(), loaderOpts.flush.intValue());
         Reader msgReader = new RMQMessageReader(rmqOpts);
         LOG.info(String.format("RabbitMQ consumer started from %s:%s for %s: %s",
-                rmqOpts.host, rmqOpts.queue,
-                loaderOpts.dbObjType.toString(), loaderOpts.dbObjName));
-        m_consumer = new ConsumerConnector(msgReader);
+                               rmqOpts.host, rmqOpts.queue,
+                               loaderOpts.targetType.toString(), loaderOpts.targetName));
 
+        // The reader gets RabbitMQ messages, i.e. CSV lines.
+        // The loader performs the VoltDB inserts.
+        // The consumer iterates parsed CSV data read from RabbitMQ.
+        m_consumer = new ConsumerConnector(msgReader);
         for (BulkLoaderData data : m_consumer) {
             try {
                 m_loader.insertRow(data.metaData, data.rowData);
             }
             catch (Exception e) {
-                LOG.error("Error in RabbitMQ Consumer", e);
+                LOG.error("Error in RabbitMQ consumer", e);
                 System.exit(-1);
             }
         }
@@ -146,12 +143,10 @@ public class RMQBulkLoader
 
     /**
      * Get connection to servers in cluster.
-     *
-     * @param config
-     * @param servers
-     * @return client
+     * @param config  VoltDB client configuration
+     * @param servers  server host/port list
+     * @return client  VoltDB client
      * @throws IOException
-     * @throws UnknownHostException
      */
     public static Client getClient(ClientConfig config, HostAndPort[] servers)
             throws IOException
@@ -267,7 +262,7 @@ public class RMQBulkLoader
                         }
                     }
                     catch (IOException e) {
-                        e.printStackTrace();
+                        LOG.error("Exception while reading the next RabbitMQ message.", e);
                         m_rowCache = null;
                     }
                     m_done = (m_rowCache == null);
@@ -299,7 +294,7 @@ public class RMQBulkLoader
             if (response != null) {
                 byte status = response.getStatus();
                 if (status != ClientResponse.SUCCESS) {
-                    LOG.error(String.format("Failed to insert row: %s", metaData.rawLine));
+                    LOG.error(String.format("Failed to insert row: %s: %s", metaData.rawLine, error));
                     if (tooManyErrors(m_errorCount.incrementAndGet()) || isFatalStatus(status)) {
                         try {
                             LOG.error("RabbitMQ bulk loader will exit.");
@@ -330,16 +325,17 @@ public class RMQBulkLoader
     /**
      * RabbitMQ bulk loader CLI main
      *
-     * @param args
+     * @param args  command line arguments
      *
      */
     public static void main(String[] args)
     {
         // Set up and parse the CLI.
-        BulkLoaderCLI loaderOpts = new BulkLoaderCLI();
-        RMQCLI rmqOpts = RMQCLI.createForConsumer();
-        VoltDBCLI voltOpts = new VoltDBCLI();
-        CLIDriver.HelpData helpData = new CLIDriver.HelpData();
+        final BulkLoaderCLISpec loaderOpts = new BulkLoaderCLISpec();
+        // Call the factory method to create an option set tuned for RabbitMQ consumers.
+        final RMQCLISpec rmqOpts = RMQCLISpec.createCLISpecForConsumer();
+        final VoltDBCLISpec voltOpts = new VoltDBCLISpec();
+        final CLIDriver.HelpData helpData = new CLIDriver.HelpData();
         helpData.syntax = HELP_SYNTAX;
         helpData.header = HELP_HEADER;
         helpData.width = HELP_WIDTH;

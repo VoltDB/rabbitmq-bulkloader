@@ -27,7 +27,7 @@ package org.voltdb.bulkloader;
 import java.io.IOException;
 
 import org.apache.commons.cli.Options;
-import org.voltdb.bulkloader.CLIDriver.ParsedOptionSet;
+import org.voltdb.bulkloader.CLIDriver.CLISpec;
 
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
@@ -97,7 +97,7 @@ public class RMQCSVReceive
     {
     }
 
-    private static class TestCLI implements ParsedOptionSet
+    private static class TestCLISpec implements CLISpec
     {
         /// Public option data
         public TestOptions opts = new TestOptions();
@@ -115,8 +115,8 @@ public class RMQCSVReceive
 
     public static void main(String[] args) throws IOException
     {
-        RMQCLI rmqCLI = RMQCLI.createForConsumer();
-        TestCLI testCLI = new TestCLI();
+        RMQCLISpec rmqCLI = RMQCLISpec.createCLISpecForConsumer();
+        TestCLISpec testCLI = new TestCLISpec();
         CLIDriver options = CLIDriver.parse(SYNTAX, args, rmqCLI, testCLI);
         try {
             receiveMessages(rmqCLI.opts, testCLI.opts, options.args);

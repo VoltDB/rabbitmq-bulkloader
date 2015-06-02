@@ -106,3 +106,5 @@ scripts/rabbitmqloader --queue test mytable
 
 - Move some utility classes to VoltDB client?
 - Upload to Maven repository
+- Print stats periodically (by insert count?) and before exiting, e.g. due to Ctrl-C.
+- Add log4j.xml.

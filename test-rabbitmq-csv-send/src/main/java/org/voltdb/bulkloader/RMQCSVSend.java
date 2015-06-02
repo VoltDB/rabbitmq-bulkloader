@@ -32,7 +32,7 @@ import java.util.Iterator;
 
 import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
-import org.voltdb.bulkloader.CLIDriver.ParsedOptionSet;
+import org.voltdb.bulkloader.CLIDriver.CLISpec;
 
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
@@ -268,7 +268,7 @@ public class RMQCSVSend
 
     }
 
-    private static class TestCLI implements ParsedOptionSet
+    private static class TestCLISpec implements CLISpec
     {
         /// Public option data
         public TestOptions opts = new TestOptions();
@@ -341,9 +341,9 @@ public class RMQCSVSend
     public static void main(String[] args) throws IOException
     {
         // Set up and parse the CLI.
-        RMQCLI rmqCLI = RMQCLI.createForProducer(DEFAULT_EXCHANGE_TYPE);
-        TestCLI testCLI = new TestCLI();
-        RandomSleeper.RSCLI sleeperCLI = RandomSleeper.getCLI(1000L, 1000L, null, true);
+        RMQCLISpec rmqCLI = RMQCLISpec.createCLISpecForProducer(DEFAULT_EXCHANGE_TYPE);
+        TestCLISpec testCLI = new TestCLISpec();
+        RandomSleeper.RSCLISpec sleeperCLI = RandomSleeper.getCLISpec(1000L, 1000L, null, true);
         CLIDriver.HelpData helpData = new CLIDriver.HelpData();
         helpData.syntax = HELP_SYNTAX;
         helpData.header = HELP_HEADER;

@@ -32,7 +32,7 @@ import com.google_voltpatches.common.net.HostAndPort;
 /**
  * Common CLI options for RabbitMQ.
  */
-public class RMQCLI implements CLIDriver.ParsedOptionSet
+public class RMQCLISpec implements CLIDriver.CLISpec
 {
     private static final String[] EXCHANGE_TYPES = {
         "direct",
@@ -48,6 +48,7 @@ public class RMQCLI implements CLIDriver.ParsedOptionSet
     private boolean m_enableExType = false;
     private boolean m_enableRoutingKey = false;
     private boolean m_enableBindingKey = false;
+    private boolean m_enablePersistentFlag = false;
 
     static String EXCHANGE_TYPE_LIST;
     {
@@ -61,22 +62,23 @@ public class RMQCLI implements CLIDriver.ParsedOptionSet
         EXCHANGE_TYPE_LIST = sbext.toString();
     }
 
-    private RMQCLI()
+    private RMQCLISpec()
     {
     }
 
-    public static RMQCLI createForProducer(String defExType)
+    public static RMQCLISpec createCLISpecForProducer(String defExType)
     {
-        RMQCLI opts = new RMQCLI();
+        RMQCLISpec opts = new RMQCLISpec();
         opts.m_enableExType = true;
         opts.opts.extype = defExType;
         opts.m_enableRoutingKey = true;
+        opts.m_enablePersistentFlag = true;
         return opts;
     }
 
-    public static RMQCLI createForConsumer()
+    public static RMQCLISpec createCLISpecForConsumer()
     {
-        RMQCLI opts = new RMQCLI();
+        RMQCLISpec opts = new RMQCLISpec();
         opts.m_enableBindingKey = true;
         return opts;
     }
@@ -148,11 +150,13 @@ public class RMQCLI implements CLIDriver.ParsedOptionSet
                             .hasArg()
                             .withDescription("RabbitMQ AMQP URI")
                             .create());
-        options.addOption(OptionBuilder
-                            .withLongOpt("persistent")
-                            .withArgName("persistent")
-                            .withDescription("RabbitMQ queue should be persistent")
-                            .create());
+        if (m_enablePersistentFlag) {
+            options.addOption(OptionBuilder
+                                .withLongOpt("persistent")
+                                .withArgName("persistent")
+                                .withDescription("RabbitMQ queue should be persistent")
+                                .create());
+        }
         if (m_enableRoutingKey) {
             options.addOption(OptionBuilder
                                 .withLongOpt("routing")

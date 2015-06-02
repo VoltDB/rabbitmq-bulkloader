@@ -34,8 +34,19 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.cli.PosixParser;
 
+/**
+ * The CLIDriver class coordinates configuration and parsing of
+ * command line options. It can combine multiple CLI specifications
+ * (CLISpec interfaces) that bundle related options. The specifications
+ * can be reused in multiple applications.
+ *
+ * A CLISpec implementation can be written with parameterization that
+ * customizes the set of available options, e.g. for different '-'/'--'
+ * letters/labels, or to limit or extend the set of supported options.
+ */
 public class CLIDriver
 {
+    /// Data for help screen
     public static class HelpData
     {
         String syntax = null;
@@ -43,18 +54,39 @@ public class CLIDriver
         String footer = null;
         Integer width = null;
     }
+
+    /// Help screen data provided by caller.
     protected final HelpData helpData;
+
+    /// Argument parser.
     protected PosixParser parser = null;
+
+    /// Apache Commons CLI command line object
     protected CommandLine cmd = null;
+
+    /// Apache Commons CLI options, composed by one or more CLISpec's.
     protected Options options = null;
+
+    /// Command line arguments.
     public String[] args = {};
+
+    /// Error messages
     protected List<String> errors = new ArrayList<String>();
 
+    /**
+     * Constructor for derived class to invoke
+     * @param helpData  help screen data
+     */
     protected CLIDriver(HelpData helpData)
     {
         this.helpData = helpData;
     }
 
+    /**
+     * Get string option value
+     * @param name  option name
+     * @return  option value
+     */
     public String getString(String name)
     {
         try {
@@ -66,6 +98,12 @@ public class CLIDriver
         }
     }
 
+    /**
+     * Get string option value with default value
+     * @param name  option name
+     * @param defaultValue  default value
+     * @return  option value
+     */
     public String getString(String name, String defaultValue)
     {
         if (!this.cmd.hasOption(name)) {
@@ -74,6 +112,11 @@ public class CLIDriver
         return getString(name);
     }
 
+    /**
+     * Get trimmed string option value
+     * @param name  option name
+     * @return  option value
+     */
     public String getTrimmedString(String name)
     {
         String value = this.getString(name);
@@ -83,6 +126,12 @@ public class CLIDriver
         return value;
     }
 
+    /**
+     * Get trimmed string option value with default value
+     * @param name  option name
+     * @param defaultValue  default value
+     * @return  option value
+     */
     public String getTrimmedString(String name, String defaultValue)
     {
         String value = this.getString(name, defaultValue);
@@ -93,6 +142,12 @@ public class CLIDriver
         return value.isEmpty() ? null : value;
     }
 
+    /**
+     * Get and parse comma-separated string option list, e.g. servers list
+     * @param name  option name
+     * @param defaultValues  default values
+     * @return  option value
+     */
     public String[] getCommaSeparatedStrings(String name, String... defaultValues)
     {
         try {
@@ -107,6 +162,11 @@ public class CLIDriver
         }
     }
 
+    /**
+     * Get number option value
+     * @param name  option name
+     * @return  option value
+     */
     public Long getNumber(String name)
     {
         try {
@@ -118,6 +178,12 @@ public class CLIDriver
         }
     }
 
+    /**
+     * Get number option value with default value
+     * @param name  option name
+     * @param defaultValue  default value
+     * @return  option value
+     */
     public Long getNumber(String name, Long defaultValue)
     {
         if (!this.cmd.hasOption(name)) {
@@ -126,6 +192,11 @@ public class CLIDriver
         return getNumber(name);
     }
 
+    /**
+     * Get boolean option value
+     * @param name  option name
+     * @return  option value
+     */
     public boolean getBoolean(String name)
     {
         return this.cmd.hasOption(name);
@@ -137,30 +208,33 @@ public class CLIDriver
      *
      * @param syntax  syntax text
      * @param args  command line arguments (and options)
-     * @param addOpts  additional ParsedOptionSet objects
+     * @param addlCLISpecs  additional CLISpec objects
+     * @return  CLIDriver object
      */
     public static CLIDriver parse(
             String syntax,
             String[] args,
-            ParsedOptionSet... addOpts)
+            CLISpec... addlCLISpecs)
     {
         HelpData helpOptions = new HelpData();
         helpOptions.syntax = syntax;
-        return parse(helpOptions, args, addOpts);
+        return parse(helpOptions, args, addlCLISpecs);
     }
 
     /**
      * CLIDriver factory that parses command line arguments and allows
      * additional options to be included. See documentation for parse().
      *
+     * @param helpOptions  command line help data
      * @param args  command line arguments (and options)
-     * @param addOpts  additional ParsedOptionSet objects
+     * @param addlCLISpecs  additional CLISpec objects
+     * @return  CLIDriver object
      */
-    public static CLIDriver parse(HelpData helpOptions, String[] args, ParsedOptionSet... addOpts)
+    public static CLIDriver parse(HelpData helpOptions, String[] args, CLISpec... addlCLISpecs)
     {
         CLIDriver config = new CLIDriver(helpOptions);
         try {
-            config.parseArgs(args, addOpts);
+            config.parseArgs(args, addlCLISpecs);
         }
         catch (ParseException e) {
             config.abort(true, e.getLocalizedMessage());
@@ -169,14 +243,25 @@ public class CLIDriver
         return config;
     }
 
-    public interface ParsedOptionSet
+    /**
+     * Interface that must be implemented in order to specify the set of
+     * available options.
+     */
+    public interface CLISpec
     {
         void preParse(Options options);
         void postParse(CLIDriver driver);
     }
 
-    private class HelpOptionSet implements ParsedOptionSet
+    /**
+     * CLI spec for standard help option.
+     */
+    private class HelpOptionSet implements CLISpec
     {
+        /**
+         * The hook for adding options (Commons CLI Option objects) to
+         * the provided Options object.
+         */
         @Override
         @SuppressWarnings("static-access")
         public void preParse(Options options)
@@ -187,6 +272,10 @@ public class CLIDriver
                                 .create('h'));
         }
 
+        /**
+         * The hook for validating and capturing option and argument data,
+         * e.g. as class data members.
+         */
         @Override
         public void postParse(CLIDriver driver)
         {
@@ -204,31 +293,31 @@ public class CLIDriver
      * customize the directly accessible opts members create a subclass.
      *
      * @param args  command line arguments (and options)
-     * @param userOptionSets  user parsed option sets
+     * @param userCLISpecs  user parsed CLI specs
      * @throws ParseException  when command line input fails validation
      */
-    protected void parseArgs(String[] args, ParsedOptionSet... userOptionSets)
+    protected void parseArgs(String[] args, CLISpec... userCLISpecs)
             throws ParseException
     {
         this.options = new Options();
 
         // Add help options to provided option sets.
-        List<ParsedOptionSet> optionSets = new ArrayList<ParsedOptionSet>(userOptionSets.length + 1);
-        for (ParsedOptionSet addOpt : userOptionSets) {
-            optionSets.add(addOpt);
+        List<CLISpec> cliSpecs = new ArrayList<CLISpec>(userCLISpecs.length + 1);
+        for (CLISpec userCLISpec : userCLISpecs) {
+            cliSpecs.add(userCLISpec);
         }
-        optionSets.add(new HelpOptionSet());
+        cliSpecs.add(new HelpOptionSet());
 
-        for (ParsedOptionSet parsedOptionSet : optionSets) {
-            parsedOptionSet.preParse(this.options);
+        for (CLISpec cliSpec : cliSpecs) {
+            cliSpec.preParse(this.options);
         }
 
         this.parser = new PosixParser();
         this.cmd = this.parser.parse(this.options, args);
         this.args = this.cmd.getArgs();
 
-        for (ParsedOptionSet parsedOptionSet : optionSets) {
-            parsedOptionSet.postParse(this);
+        for (CLISpec cliSpec : cliSpecs) {
+            cliSpec.postParse(this);
         }
 
         if (!this.errors.isEmpty()) {
@@ -244,11 +333,19 @@ public class CLIDriver
         }
     }
 
+    /**
+     * Add an error message.
+     * @param format  printf format string
+     * @param args  printf variable arguments
+     */
     public void addError(String format, Object... args)
     {
         this.errors.add(String.format(format, args));
     }
 
+    /**
+     * Display usage screen
+     */
     public void usage()
     {
         HelpFormatter formatter = new HelpFormatter();
@@ -263,6 +360,12 @@ public class CLIDriver
                 false);
     }
 
+    /**
+     * Abort due to error
+     * @param showUsage  display usage screen when true
+     * @param fmt  printf format string for message
+     * @param args  printf variable arguments
+     */
     public void abort(boolean showUsage, String fmt, Object... args)
     {
         if (fmt != null) {

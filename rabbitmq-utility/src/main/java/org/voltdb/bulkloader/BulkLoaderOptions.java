@@ -35,17 +35,17 @@ import org.voltdb.utils.CSVTupleDataLoader;
 
 public class BulkLoaderOptions
 {
-    private static int DEFAULT_MAX_ERRORS = 100;
-    private static int DEFAULT_FLUSH_INTERVAL = 10;
-    private static int DEFAULT_BATCH_SIZE = 200;
+    private final static int DEFAULT_MAX_ERRORS = 100;
+    private final static int DEFAULT_FLUSH_INTERVAL = 10;
+    private final static int DEFAULT_BATCH_SIZE = 200;
 
-    enum DBObjType {
+    public enum TargetType {
         TABLE("table"),
         PROCEDURE("procedure");
 
         private final String text;
 
-        private DBObjType(final String text)
+        private TargetType(final String text)
         {
             this.text = text;
         }
@@ -58,8 +58,8 @@ public class BulkLoaderOptions
     }
 
     // Public option opts
-    public DBObjType dbObjType = null;
-    public String dbObjName = null;
+    public TargetType targetType = null;
+    public String targetName = null;
     public Long maxerrors = (long) DEFAULT_MAX_ERRORS;
     public Long flush = (long) DEFAULT_FLUSH_INTERVAL;
     public Long batch = (long) DEFAULT_BATCH_SIZE;
@@ -78,11 +78,11 @@ public class BulkLoaderOptions
             throws IOException
     {
         try {
-            switch(this.dbObjType) {
+            switch(this.targetType) {
             case PROCEDURE:
-                return new CSVTupleDataLoader(clientImpl, this.dbObjName, errorHandler);
+                return new CSVTupleDataLoader(clientImpl, this.targetName, errorHandler);
             case TABLE:
-                return new CSVBulkDataLoader(clientImpl, this.dbObjName, this.batch.intValue(), errorHandler);
+                return new CSVBulkDataLoader(clientImpl, this.targetName, this.batch.intValue(), errorHandler);
             }
         }
         catch(Exception e) {

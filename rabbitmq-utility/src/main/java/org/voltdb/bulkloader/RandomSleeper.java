@@ -28,7 +28,7 @@ import java.util.Random;
 
 import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
-import org.voltdb.bulkloader.CLIDriver.ParsedOptionSet;
+import org.voltdb.bulkloader.CLIDriver.CLISpec;
 
 public class RandomSleeper
 {
@@ -44,7 +44,7 @@ public class RandomSleeper
         public boolean verbose = false;
     }
 
-    public static class RSCLI implements ParsedOptionSet
+    public static class RSCLISpec implements CLISpec
     {
         public RSOptions opts = new RSOptions();
 
@@ -108,9 +108,9 @@ public class RandomSleeper
         this.random = seed != null ? new Random(seed) : new Random();
     }
 
-    public static RSCLI getCLI(Long defaultSleepmin, Long defaultSleepmax, Long seed, boolean verbose)
+    public static RSCLISpec getCLISpec(Long defaultSleepmin, Long defaultSleepmax, Long seed, boolean verbose)
     {
-        RSCLI cli = new RSCLI();
+        RSCLISpec cli = new RSCLISpec();
         cli.opts.sleepmin = defaultSleepmin;
         cli.opts.sleepmax = defaultSleepmax;
         cli.opts.seed = seed;
