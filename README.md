@@ -30,7 +30,9 @@ unzip rabbitmqloader-VERSION.zip
 Note that in a build environment the distribution files may be found
 (after running "gradle assemble") in the following sub-directory:
 
-```rabbitmq-bulk-loader/build/distributions```
+```
+rabbitmq-bulk-loader/build/distributions
+```
 
 
 ## Running from the distribution
@@ -48,15 +50,21 @@ reference.
 
 ### Displaying command line help
 
-```bin/rabbitmqloader --help```
+```
+bin/rabbitmqloader --help
+```
 
 ### Example: Populate the VORDERS table from the RORDERS queue
 
-```bin/rabbitmqloader --host RHOST --queue RORDERS --servers VHOST VORDERS```
+```
+bin/rabbitmqloader --host RHOST --queue RORDERS --servers VHOST VORDERS
+```
 
 ### Example: Populate from the RORDERS queue via the AddOrder stored procedure
 
-```bin/rabbitmqloader --host RHOST --queue RORDERS --servers VHOST -p AddOrder```
+```
+bin/rabbitmqloader --host RHOST --queue RORDERS --servers VHOST -p AddOrder
+```
 
 
 ## Building
@@ -66,29 +74,41 @@ is installed.
 
 ### List gradle tasks
 
-```gradle tasks --all```
+```
+gradle tasks --all
+```
 
 Retrieves a list of all possible gradle tasks (similar to ant targets).
 
 ### Build everything
 
-```gradle build```
+```
+gradle build
+```
 
 ### Clean build output
 
-```gradle clean```
+```
+gradle clean
+```
 
 ### Build distribution archives
 
-```gradle assemble```
+```
+gradle assemble
+```
 
 ### Generate Eclipse projects
 
-```gradle eclipse```
+```
+gradle eclipse
+```
 
 ### Clean Eclipse projects
 
-```gradle cleaneclipse```
+```
+gradle cleaneclipse
+```
 
 
 ## Directory structure
