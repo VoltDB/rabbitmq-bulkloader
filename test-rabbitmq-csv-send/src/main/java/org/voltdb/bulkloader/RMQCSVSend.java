@@ -133,7 +133,9 @@ public class RMQCSVSend
         @Override
         public String next()
         {
-            return this.getNextLine();
+            String line = this.getNextLine();
+            this.nextLine = null;
+            return line;
         }
 
         @Override
@@ -308,6 +310,11 @@ public class RMQCSVSend
                 File csvfile = new File(csvfilePath);
                 if (csvfile.exists()) {
                     this.opts.lineIter = new FileIterator(csvfile);
+                    try {
+                        this.opts.lineIter.open();
+                    } catch (IOException e) {
+                        driver.addError("Could not open file: %s", csvfilePath);
+                    }
                 }
                 else {
                     driver.addError("File does not exist: %s", csvfilePath);
