@@ -133,9 +133,9 @@ public class RMQCSVSend
         @Override
         public String next()
         {
-            String nextLine = this.getNextLine();
+            String line = this.getNextLine();
             this.nextLine = null;
-            return nextLine;
+            return line;
         }
 
         @Override
